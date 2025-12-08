@@ -5,8 +5,6 @@
 
 ---
 
-## 📚 Microsoft Learn – Validated Documentation Links
-
 ### Microsoft Foundry (platform, models, architecture)
 - [Microsoft Foundry documentation home](https://learn.microsoft.com/azure/ai-foundry/)  
 - [What is Microsoft Foundry?](https://learn.microsoft.com/azure/ai-foundry/what-is-azure-ai-foundry)  
