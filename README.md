@@ -1,5 +1,6 @@
 # Hands-on Microsoft Foundry: Session Takeaways  
 * by Razi Rais*  
+- **⬇️ [Download Presentation (PDF)](https://github.com/razi-rais/microsoft-foundry-resources/raw/main/Hands-on%20Microsoft%20Foundry.pdf)**
 
 ---
 
