@@ -1,0 +1,22 @@
+flask>=2.3.0
+flask-cors>=4.0.0
+requests>=2.31.0
+langchain>=1.0.0
+langchain-core>=1.0.0
+langchain-azure-ai>=0.1.4
+langgraph>=1.0.0
+azure-identity>=1.17.0
+azure-core>=1.30.0
+# Microsoft Foundry Tracing via Application Insights (OpenTelemetry).
+# azure-monitor-opentelemetry auto-instruments requests/urllib/flask so HTTP
+# calls to the sidecar and weather-api show up as spans automatically.
+# opentelemetry-instrumentation-langchain emits GenAI-semconv spans for each
+# LLM call, tool call, and agent run — these are what the Foundry portal's
+# "Tracing" tab renders as a span tree.
+azure-monitor-opentelemetry>=1.6.0
+opentelemetry-instrumentation-langchain>=0.39.0
+# Microsoft's native OTel instrumentor — emits spans that the Foundry portal
+# "Tracing" tab recognizes (gen_ai.system="az.ai.inference", span names like
+# "chat <model>"). Runs side-by-side with the Traceloop LangChain instrumentor.
+azure-core-tracing-opentelemetry>=1.0.0b11
+azure-ai-inference>=1.0.0b9

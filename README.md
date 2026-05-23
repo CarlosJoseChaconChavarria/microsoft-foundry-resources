@@ -42,6 +42,20 @@
 
 ---
 
+## 🧑‍💻 Hands-on Sample Code
+
+The repo includes runnable agent samples that progress from simplest to most complete:
+
+| # | Sample | What it shows |
+|---|---|---|
+| 01 | [`01-basic-agent.py`](01-basic-agent.py) | Minimal Foundry agent (model + system prompt) |
+| 02 | [`02-mcp-tool-agent.py`](02-mcp-tool-agent.py) | Agent that calls an MCP server tool |
+| 03 | [`03-custom-function-tool-agent.py`](03-custom-function-tool-agent.py) | Agent with a custom Python function tool |
+| 04 | [`04-tracing-agent.py`](04-tracing-agent.py) | Agent wired up with OpenTelemetry tracing |
+| **05** | **[`05-end-to-end-agent/`](05-end-to-end-agent/)** | **Full end-to-end app**: Microsoft Entra Agent ID + Foundry + LangGraph ReAct + tool calls to a JWT-protected downstream API + full OTel tracing into Application Insights and the Foundry portal's Tracing tab. Includes a **KQL cookbook** with a single-query waterfall covering prompts → tool calls → results → token counts → cost. **Start at [`05-end-to-end-agent/sidecar/foundry/README.md`](05-end-to-end-agent/sidecar/foundry/README.md).** |
+
+---
+
 ## 1. What is Microsoft Foundry?
 
 Microsoft Foundry is a unified, enterprise-ready Azure platform that brings models, tools, frameworks, and governance together into a single runtime for building and running intelligent AI agents.

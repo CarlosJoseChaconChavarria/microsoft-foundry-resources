@@ -1,0 +1,103 @@
+# Usage: docker compose --env-file .env up --build
+# Copy .env.example to .env and fill in your values before running.
+
+services:
+  # Microsoft Entra SDK for AgentID Sidecar
+  # NOTE: No ports exposed to host — per Microsoft security guidance,
+  # the SDK API must only be reachable within the same trust boundary.
+  # https://learn.microsoft.com/en-us/entra/msidweb/agent-id-sdk/security
+  sidecar:
+    image: mcr.microsoft.com/entra-sdk/auth-sidecar:1.0.0-azurelinux3.0-distroless
+    container_name: agent-id-sidecar-foundry
+    environment:
+      # Microsoft Entra ID Configuration - Use BLUEPRINT App ID here!
+      - AzureAd__Instance=https://login.microsoftonline.com/
+      - AzureAd__TenantId=${TENANT_ID}
+      - AzureAd__ClientId=${BLUEPRINT_APP_ID}
+
+      # Client Secret Configuration
+      # Dev-only. In prod, switch to SourceType=SignedAssertionFromManagedIdentity.
+      - AzureAd__ClientCredentials__0__SourceType=ClientSecret
+      - AzureAd__ClientCredentials__0__ClientSecret=${BLUEPRINT_CLIENT_SECRET}
+
+      # Downstream API: autonomous / app-only (client credentials)
+      - DownstreamApis__graph-app__BaseUrl=https://graph.microsoft.com/v1.0/
+      - DownstreamApis__graph-app__Scopes__0=https://graph.microsoft.com/.default
+      - DownstreamApis__graph-app__RequestAppToken=true
+
+      # Downstream API: OBO / delegated (on-behalf-of user)
+      - DownstreamApis__graph__BaseUrl=https://graph.microsoft.com/v1.0/
+      - DownstreamApis__graph__Scopes__0=https://graph.microsoft.com/.default
+
+      # ASP.NET Core settings
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
+      - AllowedHosts=*
+    networks:
+      - agent-network-foundry
+
+  # Weather API - Validates Agent Identity tokens
+  weather-api:
+    build: ../weather-api
+    container_name: weather-api-foundry
+    environment:
+      # Full JWKS signature validation (default: true). Set 'false' to disable.
+      - VALIDATE_TOKEN_SIGNATURE=${VALIDATE_TOKEN_SIGNATURE:-true}
+      - TENANT_ID=${TENANT_ID}
+    networks:
+      - agent-network-foundry
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # LLM Agent with Microsoft Foundry
+  llm-agent-foundry:
+    build: .
+    container_name: llm-agent-foundry
+    ports:
+      - "3004:3000"
+    environment:
+      - SIDECAR_URL=http://sidecar:5000
+      - WEATHER_API_URL=http://weather-api:8080
+      - AGENT_APP_ID=${AGENT_CLIENT_ID}
+      - BLUEPRINT_APP_ID=${BLUEPRINT_APP_ID}
+      - TENANT_ID=${TENANT_ID}
+      - CLIENT_SPA_APP_ID=${CLIENT_SPA_APP_ID:-}
+      # Microsoft Foundry — set FOUNDRY_API_KEY for the quickest path,
+      # otherwise DefaultAzureCredential is used (requires az login / Managed Identity).
+      - FOUNDRY_ENDPOINT=${FOUNDRY_ENDPOINT}
+      - FOUNDRY_MODEL=${FOUNDRY_MODEL:-gpt-4o-mini}
+      - FOUNDRY_API_KEY=${FOUNDRY_API_KEY:-}
+      # Microsoft Foundry Tracing → Application Insights.
+      # Leave empty to disable. When set, LLM + tool spans are exported to App Insights
+      # and visible in the Foundry portal "Tracing" tab (project must have an
+      # Application Insights resource connected).
+      - APPLICATIONINSIGHTS_CONNECTION_STRING=${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
+      # Route LLM calls through the real azure-ai-inference SDK so that the
+      # Microsoft AIInferenceInstrumentor produces spans visible in the
+      # Foundry portal Tracing tab. Set to "true" to opt in. When opted in,
+      # set FOUNDRY_INFERENCE_ENDPOINT to your Foundry models URL
+      # (e.g. https://<resource>.services.ai.azure.com/models) — the
+      # OpenAI-compatible /openai/v1 endpoint also works for AIServices.
+      - USE_FOUNDRY_INFERENCE_SDK=${USE_FOUNDRY_INFERENCE_SDK:-false}
+      - FOUNDRY_INFERENCE_ENDPOINT=${FOUNDRY_INFERENCE_ENDPOINT:-}
+      # Forwarded into the container so DefaultAzureCredential's CLI / EnvironmentCredential paths work
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
+      - AZURE_CONFIG_DIR=/root/.azure
+    # Mount your host az-cli login so DefaultAzureCredential can find a cached token.
+    # Comment out if you set FOUNDRY_API_KEY (then no Azure CLI is needed).
+    volumes:
+      - ${HOME}/.azure:/root/.azure:ro
+    depends_on:
+      - sidecar
+      - weather-api
+    networks:
+      - agent-network-foundry
+
+networks:
+  agent-network-foundry:
+    driver: bridge
