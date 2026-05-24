@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "existingApplicationInsightsConnectionString": {
+      "value": "${APPLICATIONINSIGHTS_CONNECTION_STRING}"
+    },
+    "entraAppId": {
+      "value": "${WEATHER_MCP_ENTRA_APP_ID=}"
+    }
+  }
+}

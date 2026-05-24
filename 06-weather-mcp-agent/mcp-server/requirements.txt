@@ -1,0 +1,10 @@
+# Azure Functions worker package — do NOT include azure-functions-worker
+# (the runtime manages it).
+azure-functions>=2.0.0b1
+
+# OpenTelemetry HTTP client instrumentation so outbound calls to Open-Meteo
+# show up as `dependencies` in Application Insights and inherit the incoming
+# traceparent. Required for the KQL "Open-Meteo dependency" query.
+opentelemetry-instrumentation-urllib>=0.48b0
+opentelemetry-instrumentation-requests>=0.48b0
+azure-monitor-opentelemetry>=1.6.0

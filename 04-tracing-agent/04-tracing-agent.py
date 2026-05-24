@@ -1,20 +1,50 @@
-"""Build Agent using Microsoft Agent Framework in Python
-# Run this python script
-> python -m venv demos
-> demos\Scripts\activate      # On Windows
-> pip install agent-framework --pre
-> pip install azure-monitor-opentelemetry opentelemetry-sdk
+"""Build an agent wired up with OpenTelemetry tracing (sample 04).
+
+Run this script
+---------------
+> python -m venv .venv
+> source .venv/bin/activate            # macOS / Linux
+> .venv\\Scripts\\activate              # Windows
+> pip install agent-framework agent-framework-azure-ai \\
+>   azure-monitor-opentelemetry opentelemetry-sdk python-dotenv --pre
+> cp .env.example .env                 # then edit .env and fill in your values
+> az login
+> python 04-tracing-agent.py
 """
 
 import asyncio
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from agent_framework import ChatAgent
 from agent_framework_azure_ai import AzureAIAgentClient
 from azure.identity.aio import DefaultAzureCredential
 
-# Microsoft Foundry Agent Configuration
-ENDPOINT = "https://foundry-demo-srvc.services.ai.azure.com/api/projects/proj-default"
-MODEL_DEPLOYMENT_NAME = "gpt-4o"
+# Load .env from this file's folder so both `python 04-tracing-agent.py` and
+# VS Code's ▶ Run button pick up the same configuration.
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+# Microsoft Foundry Agent Configuration (read from .env — see .env.example).
+ENDPOINT = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
+MODEL_DEPLOYMENT_NAME = os.environ.get("FOUNDRY_MODEL", "gpt-4o")
+APPINSIGHTS_CONN = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING", "").strip()
+
+if not ENDPOINT or "<YOUR_" in ENDPOINT:
+    raise RuntimeError(
+        "FOUNDRY_PROJECT_ENDPOINT is not configured. "
+        "Copy .env.example to .env in this folder and fill in your Foundry "
+        "project endpoint. See README.md → Prerequisites."
+    )
+
+if not APPINSIGHTS_CONN:
+    raise RuntimeError(
+        "APPLICATIONINSIGHTS_CONNECTION_STRING is not configured. "
+        "This sample is specifically about tracing — without an App Insights "
+        "connection string no telemetry is exported. Get it from the Foundry "
+        "portal → your project → Manage → Tracing. See README.md → Prerequisites."
+    )
 
 AGENT_NAME = "ai-agent"
 AGENT_INSTRUCTIONS = "You are a helpful AI assistant."
@@ -24,12 +54,14 @@ USER_INPUTS = [
     "Can you tell me the gravity of Earth versus the gravity of Mars?",
 ]
 
-import os
-os.environ["AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED"] = "true" # False by default
+# Capture prompt + completion content in OTel spans. False by default for
+# privacy reasons — turn it on for workshops and demos, leave it off for any
+# data with regulated PII.
+os.environ["AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED"] = "true"
 
 from azure.monitor.opentelemetry import configure_azure_monitor
 
-configure_azure_monitor(connection_string="") #enable telemetry collection
+configure_azure_monitor(connection_string=APPINSIGHTS_CONN)
 
 from opentelemetry import trace
 tracer = trace.get_tracer(__name__)

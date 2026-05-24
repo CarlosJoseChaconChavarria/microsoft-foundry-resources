@@ -1,38 +1,48 @@
-"""Build Agent using Microsoft Agent Framework in Python
-# Run this python script
-> python -m venv demos
-> demos\Scripts\activate      # On Windows
-> pip install agent-framework --pre
-> pip install azure-monitor-opentelemetry opentelemetry-sdk
+"""Build a basic agent using Microsoft Agent Framework (sample 01).
+
+Run this script
+---------------
+> python -m venv .venv
+> source .venv/bin/activate            # macOS / Linux
+> .venv\\Scripts\\activate              # Windows
+> pip install agent-framework agent-framework-azure-ai python-dotenv --pre
+> cp .env.example .env                 # then edit .env and fill in your values
+> az login
+> python 01-basic-agent.py
 """
 
 import asyncio
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from agent_framework import ChatAgent
-from agent_framework import HostedMCPTool
 from agent_framework_azure_ai import AzureAIAgentClient
 from azure.identity.aio import DefaultAzureCredential
-from datetime import datetime, timezone
 
+# Load .env from this file's folder so both `python 01-basic-agent.py` and
+# VS Code's ▶ Run button pick up the same configuration.
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
-#https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_function_tools.py
-# Microsoft Foundry Agent Configuration
-ENDPOINT = "https://foundry-demo-srvc.services.ai.azure.com/api/projects/proj-default"
-MODEL_DEPLOYMENT_NAME = "gpt-4o"
+# Microsoft Foundry Agent Configuration (read from .env — see .env.example).
+ENDPOINT = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
+MODEL_DEPLOYMENT_NAME = os.environ.get("FOUNDRY_MODEL", "gpt-4o")
 
-AGENT_NAME = "Agent"
-AGENT_INSTRUCTIONS = "You are a helpful assistant that can provide time information in UTC format."
+if not ENDPOINT or "<YOUR_" in ENDPOINT:
+    raise RuntimeError(
+        "FOUNDRY_PROJECT_ENDPOINT is not configured. "
+        "Copy .env.example to .env in this folder and fill in your Foundry "
+        "project endpoint. See README.md → Prerequisites."
+    )
 
+AGENT_NAME = "ai-agent"
+AGENT_INSTRUCTIONS = "You are a helpful AI assistant."
 
 # User inputs for the conversation
 USER_INPUTS = [
-    "What is the current time in UTC??",
+    "Can you tell me the gravity of Earth versus the gravity of Mars?",
 ]
-
-def get_time() -> str:
-    """Get the current UTC time."""
-    current_time = datetime.now(timezone.utc)
-    return f"The current UTC time is {current_time.strftime('%Y-%m-%d %H:%M:%S')}."
 
 
 async def main() -> None:
@@ -48,7 +58,7 @@ async def main() -> None:
             ),
             instructions=AGENT_INSTRUCTIONS,
             max_tokens=4096,
-            tools=[get_time],
+            tools=None,
         ) as agent
     ):
         # Create a new thread that will be reused

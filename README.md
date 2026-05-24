@@ -5,6 +5,76 @@
 
 ---
 
+## 🧑‍💻 Hands-on samples — the learning arc
+
+This repository ships **eight runnable samples** that build on each other.
+Each one adds exactly one new concept on top of the previous, so you can
+either follow the arc start-to-finish or jump straight to the one that
+matches what you want to learn.
+
+### The arc at a glance
+
+```
+   01  →  02  →  02b  →  02c  →  03  →  04  →  05  →  06
+   │     │     │      │      │     │     │     │
+   │     │     │      │      │     │     │     └─ Build your own MCP server
+   │     │     │      │      │     │     │        on Azure Functions
+   │     │     │      │      │     │     │        + Entra hardening + KQL
+   │     │     │      │      │     │     └─ Per-agent identity (Entra
+   │     │     │      │      │     │        Agent ID), sidecar pattern,
+   │     │     │      │      │     │        OBO, JWT-protected downstream
+   │     │     │      │      │     └─ OpenTelemetry tracing → App Insights
+   │     │     │      │      └─ Custom Python function tool
+   │     │     │      └─ Hybrid: code is source of truth, persists in portal
+   │     │     └─ Portal-defined agent, loaded by ID from code
+   │     └─ HostedMCPTool — call a remote MCP server (Microsoft Learn MCP)
+   └─ Minimal agent: model + system prompt + one user turn
+
+   ──── full lab folders ───────────────────────────────────────────────────
+```
+
+> **Every numbered sample (01–06) has its own folder with a book-style
+> chapter README** that walks through the code line-by-line, with
+> architecture diagrams, expected output, troubleshooting, and exercises.
+> Click any *"Open it from"* link below to jump into a chapter.
+
+### Samples in detail
+
+| #      | Sample                                                              | What it adds (the one new concept)                                                                                                                                                                                                                                       | Open it from                                                                                                                                                                                                                                                                                                          |
+| ------ | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **01** | **[`01-basic-agent/`](01-basic-agent/)**                            | The minimum: model + system prompt + one user turn. No tools.                                                                                                                                                                                                            | **[`01-basic-agent/README.md`](01-basic-agent/README.md)** — chapter introduces the four building blocks of every Foundry agent.                                                                                                                                                                                       |
+| **02** | **[`02-mcp-tool-agent/`](02-mcp-tool-agent/)**                      | Adds a **remote MCP tool**. Three variants in the same folder: **02** (pure code), **02b** (portal-defined agent, loaded by ID), **02c** (hybrid / GitOps). Shared observability via `_observability.py` lights up Application Insights for all three.                    | **[`02-mcp-tool-agent/README.md`](02-mcp-tool-agent/README.md)** — covers all three variants in detail, plus the `_observability.py` walkthrough and the KQL verification step.                                                                                                                                         |
+| **03** | **[`03-custom-function-tool-agent/`](03-custom-function-tool-agent/)** | Adds a **local Python function** as a tool — the model decides when to call it.                                                                                                                                                                                          | **[`03-custom-function-tool-agent/README.md`](03-custom-function-tool-agent/README.md)** — explains how the framework turns a function signature + docstring into a tool spec the model can reason about.                                                                                                                |
+| **04** | **[`04-tracing-agent/`](04-tracing-agent/)**                        | Adds **OpenTelemetry tracing** into Application Insights — every prompt, completion, latency, and token count becomes a queryable span. Covers the GenAI semantic conventions and ships a four-query KQL cookbook.                                                          | **[`04-tracing-agent/README.md`](04-tracing-agent/README.md)** — chapter walks through `configure_azure_monitor`, the parent span pattern, and how to read App Insights with KQL.                                                                                                                                       |
+| **05** | **[`05-end-to-end-agent/`](05-end-to-end-agent/)**                  | **Microsoft Entra Agent ID** end-to-end: LangGraph ReAct agent + the official **Microsoft Entra SDK auth sidecar** + JWT-protected downstream Weather API + autonomous *and* OBO flows.                                                                                  | **Start here →** [`05-end-to-end-agent/sidecar/foundry/README.md`](05-end-to-end-agent/sidecar/foundry/README.md) for the runnable lab. The conceptual deep dive on the sidecar pattern lives in [`05-end-to-end-agent/sidecar/README.md`](05-end-to-end-agent/sidecar/README.md). |
+| **06** | **[`06-weather-mcp-agent/`](06-weather-mcp-agent/)**                | **Build your own MCP server.** `azd`-deployable `get_weather` tool on Azure Functions, consumed by a Foundry agent. Two iterations: (1) function-key auth, (2) Microsoft Entra hardening (Easy Auth + `MCP.Invoke` app role). Includes a complete KQL observability cookbook. | **Start here →** [`06-weather-mcp-agent/README.md`](06-weather-mcp-agent/README.md) — Part 0 is full VS Code setup, Parts 1–9 are the book-style lab. The MCP server itself has its own README: [`06-weather-mcp-agent/mcp-server/README.md`](06-weather-mcp-agent/mcp-server/README.md). |
+
+### Three suggested paths
+
+- 🥚 **"I want the 30-minute tour."** Run `01` → `02` → `04`. You'll see a
+  plain chat agent, then a tool-calling agent, then traces light up live in
+  Application Insights.
+- 🚀 **"I want to ship a custom MCP server on Azure."** Jump to sample
+  **`06`**. The README is a complete book-style lab; first deploy is ~15 min.
+- 🔐 **"I want production-grade identity."** Sample **`05`** is the deep
+  dive — per-agent identity, on-behalf-of, sidecar pattern, JWT validation,
+  cross-cloud portability.
+
+> [!TIP]
+> **VS Code is the recommended IDE for every sample.** Sample 06's README has
+> a full **Part 0** with extension recommendations, integrated-terminal
+> shortcuts, and one-click Azure deploys — most of it applies to the other
+> samples too. Each folder's `README.md` is best viewed with `Ctrl+Shift+V`
+> (preview pane) so you can read the chapter and run the code side-by-side.
+
+---
+
+## 📚 Reference links
+
+The links below are the "what to read next" companion to the session. They
+point at official Microsoft Learn docs; the samples above are the runnable
+counterparts.
+
 ### Microsoft Foundry (platform, models, architecture)
 - [Microsoft Foundry documentation home](https://learn.microsoft.com/azure/ai-foundry/)  
 - [What is Microsoft Foundry?](https://learn.microsoft.com/azure/ai-foundry/what-is-azure-ai-foundry)  
@@ -44,15 +114,9 @@
 
 ## 🧑‍💻 Hands-on Sample Code
 
-The repo includes runnable agent samples that progress from simplest to most complete:
-
-| # | Sample | What it shows |
-|---|---|---|
-| 01 | [`01-basic-agent.py`](01-basic-agent.py) | Minimal Foundry agent (model + system prompt) |
-| 02 | [`02-mcp-tool-agent.py`](02-mcp-tool-agent.py) | Agent that calls an MCP server tool |
-| 03 | [`03-custom-function-tool-agent.py`](03-custom-function-tool-agent.py) | Agent with a custom Python function tool |
-| 04 | [`04-tracing-agent.py`](04-tracing-agent.py) | Agent wired up with OpenTelemetry tracing |
-| **05** | **[`05-end-to-end-agent/`](05-end-to-end-agent/)** | **Full end-to-end app**: Microsoft Entra Agent ID + Foundry + LangGraph ReAct + tool calls to a JWT-protected downstream API + full OTel tracing into Application Insights and the Foundry portal's Tracing tab. Includes a **KQL cookbook** with a single-query waterfall covering prompts → tool calls → results → token counts → cost. **Start at [`05-end-to-end-agent/sidecar/foundry/README.md`](05-end-to-end-agent/sidecar/foundry/README.md).** |
+→ See the **[Hands-on samples — the learning arc](#-hands-on-samples--the-learning-arc)**
+section at the top of this README for the full sample list, suggested learning
+paths, and links into each sample's own README.
 
 ---
 
@@ -139,23 +203,34 @@ Microsoft Foundry is a unified, enterprise-ready Azure platform that brings mode
 
 
 ### AI Agent Examples
-| File | Description |
-|------|-------------|
-| [`azure_ai_basic.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_basic.py) | The simplest way to create an agent using `ChatAgent` with `AzureAIAgentClient`. It automatically handles all configuration using environment variables. |
-| [`azure_ai_with_bing_custom_search.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_bing_custom_search.py) | Shows how to use Bing Custom Search with Azure AI agents to find real-time information from the web using custom search configurations. Demonstrates how to set up and use HostedWebSearchTool with custom search instances. |
-| [`azure_ai_with_bing_grounding.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_bing_grounding.py) | Shows how to use Bing Grounding search with Azure AI agents to find real-time information from the web. Demonstrates web search capabilities with proper source citations and comprehensive error handling. |
-| [`azure_ai_with_code_interpreter.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_code_interpreter.py) | Shows how to use the HostedCodeInterpreterTool with Azure AI agents to write and execute Python code. Includes helper methods for accessing code interpreter data from response chunks. |
-| [`azure_ai_with_existing_agent.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_existing_agent.py) | Shows how to work with a pre-existing agent by providing the agent ID to the Azure AI chat client. This example also demonstrates proper cleanup of manually created agents. |
-| [`azure_ai_with_existing_thread.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_existing_thread.py) | Shows how to work with a pre-existing thread by providing the thread ID to the Azure AI chat client. This example also demonstrates proper cleanup of manually created threads. |
-| [`azure_ai_with_explicit_settings.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_explicit_settings.py) | Shows how to create an agent with explicitly configured `AzureAIAgentClient` settings, including project endpoint, model deployment, credentials, and agent name. |
-| [`azure_ai_with_azure_ai_search.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_azure_ai_search.py) | Demonstrates how to use Azure AI Search with Azure AI agents to search through indexed data. Shows how to configure search parameters, query types, and integrate with existing search indexes. |
-| [`azure_ai_with_file_search.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_file_search.py) | Demonstrates how to use the HostedFileSearchTool with Azure AI agents to search through uploaded documents. Shows file upload, vector store creation, and querying document content. Includes both streaming and non-streaming examples. |
-| [`azure_ai_with_function_tools.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_function_tools.py) | Demonstrates how to use function tools with agents. Shows both agent-level tools (defined when creating the agent) and query-level tools (provided with specific queries). |
-| [`azure_ai_with_hosted_mcp.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_hosted_mcp.py) | Shows how to integrate Azure AI agents with hosted Model Context Protocol (MCP) servers for enhanced functionality and tool integration. Demonstrates remote MCP server connections and tool discovery. |
-| [`azure_ai_with_local_mcp.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_local_mcp.py) | Shows how to integrate Azure AI agents with local Model Context Protocol (MCP) servers for enhanced functionality and tool integration. Demonstrates both agent-level and run-level tool configuration. |
-| [`azure_ai_with_multiple_tools.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_multiple_tools.py) | Demonstrates how to use multiple tools together with Azure AI agents, including web search, MCP servers, and function tools. Shows coordinated multi-tool interactions and approval workflows. |
-| [`azure_ai_with_openapi_tools.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_openapi_tools.py) | Demonstrates how to use OpenAPI tools with Azure AI agents to integrate external REST APIs. Shows OpenAPI specification loading, anonymous authentication, thread context management, and coordinated multi-API conversations using weather and countries APIs. |
-| [`azure_ai_with_thread.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_thread.py) | Demonstrates thread management with Azure AI agents, including automatic thread creation for stateless conversations and explicit thread management for maintaining conversation context across multiple interactions. |
+
+The **runnable samples in this repository** (01–06) are listed in the
+[Hands-on samples — the learning arc](#-hands-on-samples--the-learning-arc)
+section at the top. They progress from a minimal chat agent to a full
+Entra-secured MCP server.
+
+For a much larger catalog of **Azure AI / Foundry agent patterns** — Bing
+grounding, code interpreter, file search, OpenAPI tools, multi-tool
+orchestration, thread management, and more — see the upstream **Agent
+Framework getting-started gallery**:
+
+→ [microsoft/agent-framework · python/samples/getting_started/agents/azure_ai_agent](https://github.com/microsoft/agent-framework/tree/main/python/samples/getting_started/agents/azure_ai_agent)
+
+A few standouts worth bookmarking:
+
+| Pattern                            | Sample                                                                                                                                                                       |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Simplest Azure AI agent            | [`azure_ai_basic.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_basic.py)                          |
+| Bing grounding (web search)        | [`azure_ai_with_bing_grounding.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_bing_grounding.py) |
+| Code Interpreter                   | [`azure_ai_with_code_interpreter.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_code_interpreter.py) |
+| File search (vector store)         | [`azure_ai_with_file_search.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_file_search.py)     |
+| Custom Python function tools       | [`azure_ai_with_function_tools.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_function_tools.py) |
+| Hosted MCP server                  | [`azure_ai_with_hosted_mcp.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_hosted_mcp.py)       |
+| Local MCP server                   | [`azure_ai_with_local_mcp.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_local_mcp.py)         |
+| Multi-tool orchestration           | [`azure_ai_with_multiple_tools.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_multiple_tools.py) |
+| OpenAPI 3.0 tools                  | [`azure_ai_with_openapi_tools.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_openapi_tools.py) |
+| Azure AI Search (RAG)              | [`azure_ai_with_azure_ai_search.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_azure_ai_search.py) |
+| Thread management                  | [`azure_ai_with_thread.py`](https://github.com/microsoft/agent-framework/blob/main/python/samples/getting_started/agents/azure_ai_agent/azure_ai_with_thread.py)               |
 
 ---
 

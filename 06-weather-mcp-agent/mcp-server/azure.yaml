@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: weather-mcp-server
+metadata:
+  template: foundry-workshop-06@0.1.0
+services:
+  api:
+    project: .
+    language: python
+    host: function
+hooks:
+  postprovision:
+    posix:
+      shell: sh
+      run: |
+        echo ""
+        echo "------------------------------------------------------------"
+        echo "  MCP server deployed."
+        echo "  Endpoint:  https://$(azd env get-value FUNCTION_APP_NAME).azurewebsites.net/runtime/webhooks/mcp"
+        echo ""
+        echo "  Grab the system key (used as x-functions-key by Foundry):"
+        echo "    az functionapp keys list \\"
+        echo "      --resource-group $(azd env get-value AZURE_RESOURCE_GROUP) \\"
+        echo "      --name $(azd env get-value FUNCTION_APP_NAME) \\"
+        echo "      --query systemKeys.mcp_extension -o tsv"
+        echo "------------------------------------------------------------"
+        echo ""
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host ""
+        Write-Host "------------------------------------------------------------"
+        Write-Host "  MCP server deployed."
+        Write-Host "  Endpoint:  https://$(azd env get-value FUNCTION_APP_NAME).azurewebsites.net/runtime/webhooks/mcp"
+        Write-Host ""
+        Write-Host "  Grab the system key (used as x-functions-key by Foundry):"
+        Write-Host "    az functionapp keys list ``"
+        Write-Host "      --resource-group $(azd env get-value AZURE_RESOURCE_GROUP) ``"
+        Write-Host "      --name $(azd env get-value FUNCTION_APP_NAME) ``"
+        Write-Host "      --query systemKeys.mcp_extension -o tsv"
+        Write-Host "------------------------------------------------------------"
+        Write-Host ""
