@@ -1,25 +1,34 @@
-"""Build Agent using Microsoft Agent Framework in Python
+r"""Build an MCP-enabled Agent using Microsoft Agent Framework v1.6+ (GA)
+
 # Run this python script
 > python -m venv demos
-> demos\Scripts\activate      # On Windows
-> pip install agent-framework --pre
+> source demos/bin/activate     # macOS / Linux
+> demos\Scripts\activate        # Windows
+> pip install agent-framework azure-monitor-opentelemetry python-dotenv --pre
+> az login                      # FoundryChatClient uses your Azure CLI credentials
 > python 02-mcp-tool-agent.py
 """
 
 import asyncio
+import os
 
-from agent_framework import ChatAgent
-from agent_framework import HostedMCPTool
-from agent_framework_azure_ai import AzureAIAgentClient
-from azure.identity.aio import DefaultAzureCredential
+from agent_framework import Agent
+from agent_framework.foundry import FoundryChatClient
+from azure.identity import AzureCliCredential
 
-# Microsoft Foundry Agent Configuration
-ENDPOINT = "https://foundry-demo-srvc.services.ai.azure.com/api/projects/proj-default"
-MODEL_DEPLOYMENT_NAME = "gpt-4o"
+from _observability import init_observability
 
-AGENT_NAME = "Agent03"
+# Microsoft Foundry project configuration.
+# Set FOUNDRY_PROJECT_ENDPOINT in .env (see .env.example).
+# Format: https://<resource>.services.ai.azure.com/api/projects/<project-name>
+PROJECT_ENDPOINT = os.environ.get(
+    "FOUNDRY_PROJECT_ENDPOINT",
+    "https://<YOUR_FOUNDRY_RESOURCE>.services.ai.azure.com/api/projects/<YOUR_PROJECT_NAME>",
+)
+MODEL = os.environ.get("FOUNDRY_MODEL", "gpt-4o")
+
+AGENT_NAME = "mcp-learn-agent-codefirst"
 AGENT_INSTRUCTIONS = "You answer questions by searching Microsoft Learn content only."
-
 
 # User inputs for the conversation
 USER_INPUTS = [
@@ -28,51 +37,36 @@ USER_INPUTS = [
 
 
 async def main() -> None:
-    async with (
-        DefaultAzureCredential() as credential,
-        ChatAgent(
-            chat_client=AzureAIAgentClient(
-                project_endpoint=ENDPOINT,
-                model_deployment_name=MODEL_DEPLOYMENT_NAME,
-                async_credential=credential,
-                agent_name=AGENT_NAME,
-                agent_id=None,  # Since no Agent ID is provided, the agent will be automatically created and deleted after getting response
-            ),
-            instructions=AGENT_INSTRUCTIONS,
-            max_tokens=4096,
-            tools=HostedMCPTool(
-                name="Microsoft Learn MCP",
-                url="https://learn.microsoft.com/api/mcp",                     
-                approval_mode="never_require",  # Auto-approve documentation searches
-                ),
-        ) as agent
-    ):
-        # Create a new thread that will be reused
-        thread = agent.get_new_thread()
+    init_observability("pure-code")
 
-        # Process user messages
+    client = FoundryChatClient(
+        model=MODEL,
+        project_endpoint=PROJECT_ENDPOINT,
+        credential=AzureCliCredential(),
+    )
+
+    # Microsoft Learn MCP is read-only public docs search, so auto-approving
+    # every tool call is safe. For any MCP server with write/destructive
+    # tools, use approval_mode="always_require" (or a per-tool dict).
+    mcp_tool = client.get_mcp_tool(
+        name="Microsoft Learn MCP",
+        url="https://learn.microsoft.com/api/mcp",
+        approval_mode="never_require",
+    )
+
+    async with Agent(
+        client=client,
+        name=AGENT_NAME,
+        instructions=AGENT_INSTRUCTIONS,
+        tools=[mcp_tool],
+    ) as agent:
         for user_input in USER_INPUTS:
             print(f"\n# User: '{user_input}'")
-            async for chunk in agent.run_stream([user_input], thread=thread):
-                if chunk.text:
-                    print(chunk.text, end="")
-                elif (
-                    chunk.raw_representation
-                    and chunk.raw_representation.raw_representation
-                    and hasattr(chunk.raw_representation.raw_representation, "status")
-                    and hasattr(chunk.raw_representation.raw_representation, "type")
-                    and chunk.raw_representation.raw_representation.status == "completed"
-                    and hasattr(chunk.raw_representation.raw_representation, "step_details")
-                    and hasattr(chunk.raw_representation.raw_representation.step_details, "tool_calls")
-                ):
-                    print("")
-                    print("Tool calls: ", chunk.raw_representation.raw_representation.step_details.tool_calls)
-            print("")
-        
+            result = await agent.run(user_input)
+            print(f"# {AGENT_NAME}: {result}\n")
+
         print("\n--- All tasks completed successfully ---")
 
-    # Give additional time for all async cleanup to complete
-    await asyncio.sleep(1.0)
 
 if __name__ == "__main__":
     try:
