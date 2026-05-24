@@ -136,6 +136,80 @@ The sidecar sits between your agent and Microsoft Entra ID. The agent **never** 
 - A Microsoft Foundry project with at least one chat model deployed (e.g. `gpt-4o-mini`)
 - *Either* a Foundry API key *or* Azure CLI installed locally (`az login`) for `DefaultAzureCredential`
 
+### 4.1 Grant Microsoft Graph permissions to the Agent Identity
+
+The **OBO** toggle in this demo asks the Agent Identity (`AGENT_CLIENT_ID`) to exchange the signed-in user's token for a downstream Microsoft Graph token. If the Agent Identity is not pre-authorized to request Graph scopes on behalf of users, sign-in fails with:
+
+> `AADSTS65001: The user or administrator has not consented to use the application with ID '<AGENT_CLIENT_ID>'`
+
+> **Note:** The **Autonomous** toggle works without any Graph permission on the Agent Identity — it just mints an FMI token and inspects it; it never actually calls Graph. Only OBO strictly needs the grant below.
+
+Grant these two permissions (mirrors the AWS Bedrock sample one-for-one):
+
+| Permission | Type | Required for | Why |
+|---|---|---|---|
+| `User.Read`     | Delegated (`AllPrincipals` consent) | **OBO toggle** | OBO exchange returns a delegated Graph token for the signed-in user. `AllPrincipals` skips the per-user consent prompt. |
+| `User.Read.All` | Application (admin-consented) | *Optional* — only if you extend the Autonomous path to actually call Graph | App-only tokens carry no user identity; need an admin-granted role to call Graph as the Agent. |
+
+#### Option A — Azure Portal (UI)
+
+1. **Microsoft Entra admin center → Identity → Applications → Agent identities**
+2. Open the Agent identity that matches `AGENT_CLIENT_ID` from your `.env`
+3. **Permissions → Add a permission → Microsoft Graph**
+   - **Delegated permissions** → check `User.Read` → **Add permissions**  *(required for OBO)*
+   - **Application permissions** → check `User.Read.All` → **Add permissions**  *(optional — only if you'll call Graph from the Autonomous path)*
+4. Click **Grant admin consent for <tenant>** → confirm — both rows should turn green ✅
+
+#### Option B — Microsoft Graph API (one-shot, scriptable)
+
+Replace the four `<...>` placeholders. You need an access token with `AppRoleAssignment.ReadWrite.All` and `DelegatedPermissionGrant.ReadWrite.All` (admin).
+
+```bash
+TENANT_ID="<your-tenant-id>"
+AGENT_SP_ID="<object-id-of-Agent-Identity-SP>"   # NOT the AGENT_CLIENT_ID (app id)
+GRAPH_SP_ID="<object-id-of-Microsoft-Graph-SP-in-your-tenant>"
+TOKEN="<bearer-token-for-graph.microsoft.com>"   # e.g. az account get-access-token --resource https://graph.microsoft.com -o tsv --query accessToken
+
+# REQUIRED for OBO — delegated User.Read, tenant-wide consent
+curl -X POST "https://graph.microsoft.com/v1.0/oauth2PermissionGrants" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{
+    \"clientId\":    \"$AGENT_SP_ID\",
+    \"consentType\": \"AllPrincipals\",
+    \"resourceId\":  \"$GRAPH_SP_ID\",
+    \"scope\":       \"User.Read\"
+  }"
+
+# OPTIONAL — application User.Read.All (only if you'll call Graph from the Autonomous path)
+curl -X POST "https://graph.microsoft.com/v1.0/servicePrincipals/$AGENT_SP_ID/appRoleAssignments" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{
+    \"principalId\": \"$AGENT_SP_ID\",
+    \"resourceId\":  \"$GRAPH_SP_ID\",
+    \"appRoleId\":   \"df021288-bdef-4463-88db-98f22de89214\"
+  }"
+```
+
+Find `GRAPH_SP_ID` with:
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://graph.microsoft.com/v1.0/servicePrincipals?\$filter=appId eq '00000003-0000-0000-c000-000000000000'" \
+  | jq -r '.value[0].id'
+```
+
+#### Verify
+
+```bash
+# Should return 1 row (User.Read delegated, AllPrincipals) — required for OBO
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://graph.microsoft.com/v1.0/oauth2PermissionGrants?\$filter=clientId eq '$AGENT_SP_ID'" \
+  | jq '.value[] | {scope, consentType}'
+
+# Should return 1 row (User.Read.All app role) — only if you granted the optional app permission
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://graph.microsoft.com/v1.0/servicePrincipals/$AGENT_SP_ID/appRoleAssignments" | jq '.value[].appRoleId'
+```
+
+> The constant `df021288-bdef-4463-88db-98f22de89214` is the well-known Microsoft Graph `User.Read.All` **application** role id and is the same in every tenant.
+
 ---
 
 ## 5. Quickstart
