@@ -1,16 +1,16 @@
-# Chapter 7 · Red-Teaming Your Agent — Two Ways
+# Lab 7 · Red-Teaming Your Agent — Two Ways
 
-> **You can now build, observe, secure, and deploy AI agents** (chapters 1–6).
+> **You can now build, observe, secure, and deploy AI agents** (labs 1–6).
 > One discipline is still missing: **adversarial testing**. Before you trust an
 > agent in front of customers, you need to know how it behaves when a malicious
 > user is actively trying to break it.
 >
-> This chapter teaches you to measure that — twice. First with **PyRIT** on
+> This lab teaches you to measure that — twice. First with **PyRIT** on
 > your laptop, so you understand the building blocks. Then with the **Foundry
 > AI Red Teaming Agent**, which runs the same idea as a managed cloud service
 > with a hosted judge model and a rich portal scorecard.
 
-By the end of this chapter you will be able to:
+By the end of this lab you will be able to:
 
 - Explain what "AI red-teaming" is, what it's measuring, and why both
   manual and automated red-teaming have a place.
@@ -158,7 +158,7 @@ Three concepts, infinite combinations. That's the whole framework.
 
 ## Suggested order of work
 
-1. **Read this chapter** (you're here).
+1. **Read this lab overview** (you're here).
 2. **Run lab 07a** (`07a-local-pyrit/`). You'll see PyRIT's building blocks
    one at a time, observe how a Base64-encoded harmful prompt slips past
    alignment that catches the plain version, and end with a printed ASR.

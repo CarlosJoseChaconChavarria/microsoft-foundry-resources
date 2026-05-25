@@ -1,6 +1,6 @@
 # Lab 7a · Red-Teaming AcmeBot Locally with PyRIT
 
-> **You read [chapter 7's intro](../README.md):** you know red-teaming is
+> **You read [lab 7's overview](../README.md):** you know red-teaming is
 > automated adversarial testing, and you saw the three building blocks —
 > *converter, target, scorer*. Now you'll put them in your hands.
 >
@@ -522,7 +522,7 @@ method, and the whole framework is uniform.
 
 ## Exercise 2 — Harden the system prompt and re-scan
 
-This is the most important exercise in the chapter. It demonstrates that
+This is the most important exercise in the lab. It demonstrates that
 **most safety failures in real products are prompt-engineering failures**,
 not model failures.
 

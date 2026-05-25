@@ -1,6 +1,6 @@
 # Sample 03 · An agent that calls your own Python functions
 
-> **What this chapter teaches.** Sample 02 showed an agent calling a
+> **What this lab teaches.** Sample 02 showed an agent calling a
 > *remote* tool over MCP. Here you'll do the opposite extreme: give the
 > agent a **plain Python function** living inside the same script. No
 > server, no JSON-RPC, no network. The model decides when to call it, the
@@ -37,7 +37,7 @@
 
 ## What you will learn
 
-By the end of this chapter you will be able to:
+By the end of this lab you will be able to:
 
 1. **Define a Python function as an agent tool** — and explain exactly how
    the model knows what arguments it takes.

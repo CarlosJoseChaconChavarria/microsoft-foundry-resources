@@ -1,6 +1,6 @@
 # Sample 02 · An agent that calls tools (Model Context Protocol)
 
-> **What this chapter teaches.** In sample 01 you built an agent that could
+> **What this lab teaches.** In sample 01 you built an agent that could
 > only *talk*. Here you'll give an agent its first **tool** so it can
 > actually *do* something — specifically, search the Microsoft Learn
 > documentation library through the **Model Context Protocol (MCP)**.
@@ -44,7 +44,7 @@
 
 ## What you will learn
 
-By the end of this chapter you will be able to:
+By the end of this lab you will be able to:
 
 1. **Explain MCP** — what it is, what problem it solves, and how it differs
    from "the agent calls a Python function".
@@ -67,10 +67,10 @@ By the end of this chapter you will be able to:
 | **A Microsoft Foundry project** with a **gpt-4o** deployment         | Same as sample 01.                                                                                                                                  |
 | **Azure CLI signed in** (`az login`)                                 | All three variants use `AzureCliCredential` so the CLI session is the auth source.                                                                  |
 | **An Application Insights resource attached to your Foundry project** | For tracing. Find it via **Foundry portal → your project → Manage → Tracing**. Optional — the samples run without it but emit no telemetry.         |
-| **VS Code with the Python and Azure Tools extensions** (recommended) | The integrated terminal hosts every command in this chapter.                                                                                        |
+| **VS Code with the Python and Azure Tools extensions** (recommended) | The integrated terminal hosts every command in this lab.                                                                                            |
 
 > **Note.** All three variants in this folder share one `.env` file. Copy
-> `.env.example` to `.env` once and you're set for the whole chapter.
+> `.env.example` to `.env` once and you're set for the whole lab.
 
 ---
 

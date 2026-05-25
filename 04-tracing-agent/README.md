@@ -1,4 +1,4 @@
-# Chapter 4 · Observing an Agent with OpenTelemetry and Application Insights
+# Lab 4 · Observing an Agent with OpenTelemetry and Application Insights
 
 > **You have just finished sample 03**: an agent with one local function tool
 > that fires on demand. The agent works — and you have *no idea* what's
@@ -6,15 +6,15 @@
 > model consume? Which prompt produced which completion? If something
 > regresses next week, how will you debug it?
 >
-> Welcome to the chapter that grows your eyes.
+> Welcome to the lab that grows your eyes.
 
-This chapter takes the *same* basic agent from sample 01 and adds **one new
+This lab takes the *same* basic agent from sample 01 and adds **one new
 import**, **one new function call**, and **one `with` block** — and in doing
 so wires it into **Azure Monitor Application Insights** through the
 **OpenTelemetry (OTel)** SDK. Every prompt, every completion, every model
 call, and every token count becomes a queryable telemetry record.
 
-By the time you finish this chapter you'll know:
+By the time you finish this lab you'll know:
 
 - What OpenTelemetry is, why every cloud SDK now ships with it, and how the
   abstraction stack of **OTel API → OTel SDK → Azure Monitor exporter →
@@ -83,7 +83,7 @@ which is the foundation of every production AI system.
 | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | **You've completed sample 01**                                               | We re-use the agent skeleton verbatim. The four building blocks are not re-explained.                      |
 | **Python 3.10+**                                                             | Agent Framework uses modern `async` features.                                                              |
-| **A Microsoft Foundry project** with a **gpt-4o** deployment                 | Same as previous chapters.                                                                                 |
+| **A Microsoft Foundry project** with a **gpt-4o** deployment                 | Same as previous labs.                                                                                     |
 | **An Application Insights resource** attached to your Foundry project        | The destination for our telemetry. See [Step 2 below](#step-2--get-an-application-insights-connection-string). |
 | **Azure CLI signed in** (`az login`)                                         | `DefaultAzureCredential` picks up your CLI login.                                                          |
 | **A configured `.env` file in this folder**                                  | Holds three values: project endpoint, model name, App Insights connection string.                         |
@@ -242,7 +242,7 @@ spans in App Insights with attributes like:
 | `gen_ai.completion`                  | `"Sure! On Earth gravity is approximately 9.81 m/s² ..."`  | Recorded **only** when content recording is on. |
 
 These attributes are *exactly* what the KQL queries at the end of this
-chapter rely on.
+lab rely on.
 
 ---
 
@@ -650,10 +650,10 @@ You can read every prompt and every completion as a row in a table.
 
 ## Where to go next
 
-You now have **eyes on every agent run**. The remaining chapters take that
+You now have **eyes on every agent run**. The remaining labs take that
 visibility into more sophisticated territory:
 
-| Next chapter                                                                                                                          | Why                                                                                                                                                                 |
+| Next lab                                                                                                                              | Why                                                                                                                                                                 |
 | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`05-end-to-end-agent/`](../05-end-to-end-agent/)                                                                                     | An agent that calls a JWT-protected weather API as a Python function tool — the same observability lessons apply to outgoing HTTP from your tool functions.          |
 | [`06-weather-mcp-agent/`](../06-weather-mcp-agent/)                                                                                   | A weather agent backed by a **custom MCP server on Azure Functions**, with an entire KQL cookbook (`06-weather-mcp-agent/kql/observability-cookbook.md`) showing how to correlate spans across the network boundary. |

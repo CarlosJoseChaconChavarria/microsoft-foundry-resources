@@ -1,6 +1,6 @@
 # Sample 01 · Your first Microsoft Foundry agent
 
-> **What this chapter teaches.** You will build the smallest possible
+> **What this lab teaches.** You will build the smallest possible
 > Microsoft Foundry agent — a single Python file that connects to your
 > Foundry project, sends one prompt to **gpt-4o**, streams the response back
 > to the terminal, and tears everything down cleanly. By the end you will
@@ -34,7 +34,7 @@
 
 ## What you will learn
 
-By the end of this chapter you will be able to:
+By the end of this lab you will be able to:
 
 1. **Explain the four building blocks** of every Microsoft Foundry agent: a
    *credential*, a *client*, an *agent*, and a *thread*.
@@ -60,7 +60,7 @@ By the end of this chapter you will be able to:
 ### Step 1 — Configure your `.env` file
 
 This sample reads its configuration from a `.env` file **in this folder**.
-You'll do this exactly once per chapter; both VS Code's ▶ *Run Python File*
+You'll do this exactly once per lab; both VS Code's ▶ *Run Python File*
 button and `python 01-basic-agent.py` from the terminal pick up the same
 file automatically.
 
