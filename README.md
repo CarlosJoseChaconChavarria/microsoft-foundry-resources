@@ -7,7 +7,7 @@
 
 ## 🧑‍💻 Hands-on samples — the learning arc
 
-This repository ships **eight runnable samples** that build on each other.
+This repository ships **nine runnable samples** that build on each other.
 Each one adds exactly one new concept on top of the previous, so you can
 either follow the arc start-to-finish or jump straight to the one that
 matches what you want to learn.
@@ -15,8 +15,13 @@ matches what you want to learn.
 ### The arc at a glance
 
 ```
-   01  →  02  →  02b  →  02c  →  03  →  04  →  05  →  06
-   │     │     │      │      │     │     │     │
+   01  →  02  →  02b  →  02c  →  03  →  04  →  05  →  06  →  07
+   │     │     │      │      │     │     │     │     │
+   │     │     │      │      │     │     │     │     └─ AI red-teaming:
+   │     │     │      │      │     │     │     │        local PyRIT (07a) and
+   │     │     │      │      │     │     │     │        cloud Foundry RT agent
+   │     │     │      │      │     │     │     │        (07b) against the same
+   │     │     │      │      │     │     │     │        AcmeBot target
    │     │     │      │      │     │     │     └─ Build your own MCP server
    │     │     │      │      │     │     │        on Azure Functions
    │     │     │      │      │     │     │        + Entra hardening + KQL
@@ -33,7 +38,7 @@ matches what you want to learn.
    ──── full lab folders ───────────────────────────────────────────────────
 ```
 
-> **Every numbered sample (01–06) has its own folder with a book-style
+> **Every numbered sample (01–07) has its own folder with a book-style
 > chapter README** that walks through the code line-by-line, with
 > architecture diagrams, expected output, troubleshooting, and exercises.
 > Click any *"Open it from"* link below to jump into a chapter.
@@ -48,8 +53,9 @@ matches what you want to learn.
 | **04** | **[`04-tracing-agent/`](04-tracing-agent/)**                        | Adds **OpenTelemetry tracing** into Application Insights — every prompt, completion, latency, and token count becomes a queryable span. Covers the GenAI semantic conventions and ships a four-query KQL cookbook.                                                          | **[`04-tracing-agent/README.md`](04-tracing-agent/README.md)** — chapter walks through `configure_azure_monitor`, the parent span pattern, and how to read App Insights with KQL.                                                                                                                                       |
 | **05** | **[`05-end-to-end-agent/`](05-end-to-end-agent/)**                  | **Microsoft Entra Agent ID** end-to-end: LangGraph ReAct agent + the official **Microsoft Entra SDK auth sidecar** + JWT-protected downstream Weather API + autonomous *and* OBO flows.                                                                                  | **Start here →** [`05-end-to-end-agent/sidecar/foundry/README.md`](05-end-to-end-agent/sidecar/foundry/README.md) for the runnable lab. The conceptual deep dive on the sidecar pattern lives in [`05-end-to-end-agent/sidecar/README.md`](05-end-to-end-agent/sidecar/README.md). |
 | **06** | **[`06-weather-mcp-agent/`](06-weather-mcp-agent/)**                | **Build your own MCP server.** `azd`-deployable `get_weather` tool on Azure Functions, consumed by a Foundry agent. Two iterations: (1) function-key auth, (2) Microsoft Entra hardening (Easy Auth + `MCP.Invoke` app role). Includes a complete KQL observability cookbook. | **Start here →** [`06-weather-mcp-agent/README.md`](06-weather-mcp-agent/README.md) — Part 0 is full VS Code setup, Parts 1–9 are the book-style lab. The MCP server itself has its own README: [`06-weather-mcp-agent/mcp-server/README.md`](06-weather-mcp-agent/mcp-server/README.md). |
+| **07** | **[`07-red-teaming/`](07-red-teaming/)**                            | **AI red-teaming.** Two side-by-side labs that attack the same deliberately-permissive "AcmeBot" target: **07a** uses the open-source **PyRIT** library locally so you see every converter, scorer, and ASR calculation by hand; **07b** uses Foundry's **AI Red Teaming Agent** so you get a hosted simulator + judge + scorecard that lands in the portal Evaluations tab. End-to-end teaches the Map / Measure / Manage loop and the standard harm taxonomy (Violence, Hate, Sexual, Self-harm). | **Start here →** [`07-red-teaming/README.md`](07-red-teaming/README.md) — chapter intro with side-by-side comparison, then dive into [`07a-local-pyrit/README.md`](07-red-teaming/07a-local-pyrit/README.md) or [`07b-cloud-foundry/README.md`](07-red-teaming/07b-cloud-foundry/README.md). |
 
-### Three suggested paths
+### Four suggested paths
 
 - 🥚 **"I want the 30-minute tour."** Run `01` → `02` → `04`. You'll see a
   plain chat agent, then a tool-calling agent, then traces light up live in
@@ -59,6 +65,9 @@ matches what you want to learn.
 - 🔐 **"I want production-grade identity."** Sample **`05`** is the deep
   dive — per-agent identity, on-behalf-of, sidecar pattern, JWT validation,
   cross-cloud portability.
+- 🛡️ **"I need to ship safely — how do I prove my agent is hard to break?"**
+  Sample **`07`**. Run 07a to learn the moving parts of an adversarial scan,
+  then run 07b to see what your release pipeline will actually use.
 
 > [!TIP]
 > **VS Code is the recommended IDE for every sample.** Sample 06's README has
@@ -106,6 +115,13 @@ counterparts.
 - [Continuously evaluate your AI agents](https://learn.microsoft.com/azure/ai-foundry/how-to/continuous-evaluation-agents)  
 - [Application Insights overview (observability)](https://learn.microsoft.com/azure/azure-monitor/app/app-insights-overview)  
 - [AI agents view in Application Insights](https://learn.microsoft.com/azure/azure-monitor/app/agents-view)  
+
+### Safety, evaluation & red-teaming
+- [AI Red Teaming Agent (concept)](https://learn.microsoft.com/azure/ai-foundry/concepts/ai-red-teaming-agent)  
+- [Run automated red-teaming scans on your AI app](https://learn.microsoft.com/azure/ai-foundry/how-to/develop/run-scans-ai-red-teaming-agent)  
+- [PyRIT — Python Risk Identification Toolkit (GitHub)](https://github.com/Azure/PyRIT)  
+- [Azure AI Content Safety overview](https://learn.microsoft.com/azure/ai-services/content-safety/overview)  
+- [Microsoft AI Red Team — official blog](https://www.microsoft.com/security/blog/topic/ai-red-team/)  
 
 ### FAQ and extra
 - [Microsoft Foundry FAQ](https://learn.microsoft.com/azure/ai-foundry/faq)
