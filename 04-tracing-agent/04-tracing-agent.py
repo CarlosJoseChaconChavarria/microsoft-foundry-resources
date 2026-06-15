@@ -5,8 +5,8 @@ Run this script
 > python -m venv .venv
 > source .venv/bin/activate            # macOS / Linux
 > .venv\\Scripts\\activate              # Windows
-> pip install agent-framework agent-framework-azure-ai \\
->   azure-monitor-opentelemetry opentelemetry-sdk python-dotenv --pre
+> pip install agent-framework agent-framework-foundry \\
+>   azure-monitor-opentelemetry opentelemetry-sdk python-dotenv
 > cp .env.example .env                 # then edit .env and fill in your values
 > az login
 > python 04-tracing-agent.py
@@ -18,98 +18,92 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from agent_framework import ChatAgent
-from agent_framework_azure_ai import AzureAIAgentClient
-from azure.identity.aio import DefaultAzureCredential
-
 # Load .env from this file's folder so both `python 04-tracing-agent.py` and
-# VS Code's ▶ Run button pick up the same configuration.
+# VS Code's Run button pick up the same configuration.
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-# Microsoft Foundry Agent Configuration (read from .env — see .env.example).
+# Microsoft Foundry Agent Configuration (read from .env, see .env.example).
 ENDPOINT = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
-MODEL_DEPLOYMENT_NAME = os.environ.get("FOUNDRY_MODEL", "gpt-4o")
+MODEL = os.environ.get("FOUNDRY_MODEL", "gpt-4o")
 APPINSIGHTS_CONN = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING", "").strip()
 
 if not ENDPOINT or "<YOUR_" in ENDPOINT:
     raise RuntimeError(
         "FOUNDRY_PROJECT_ENDPOINT is not configured. "
         "Copy .env.example to .env in this folder and fill in your Foundry "
-        "project endpoint. See README.md → Prerequisites."
+        "project endpoint. See README.md."
     )
 
 if not APPINSIGHTS_CONN:
     raise RuntimeError(
         "APPLICATIONINSIGHTS_CONNECTION_STRING is not configured. "
-        "This sample is specifically about tracing — without an App Insights "
+        "This sample is specifically about tracing. Without an App Insights "
         "connection string no telemetry is exported. Get it from the Foundry "
-        "portal → your project → Manage → Tracing. See README.md → Prerequisites."
+        "portal under your project, Manage, Tracing. See README.md."
     )
+
+# Capture prompt and completion content in OTel spans. False by default for
+# privacy reasons. Turn it on for workshops and demos, leave it off for any
+# data with regulated PII. Both env vars must be set BEFORE the framework
+# imports below so they take effect at instrumentation-setup time.
+os.environ["AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED"] = "true"
+os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
+
+from agent_framework import Agent
+from agent_framework.foundry import FoundryChatClient
+from agent_framework.observability import enable_instrumentation
+from azure.identity import AzureCliCredential
+from azure.monitor.opentelemetry import configure_azure_monitor
+from opentelemetry import trace
+
+# One-line install of the entire telemetry pipeline.
+configure_azure_monitor(connection_string=APPINSIGHTS_CONN)
+
+# Turn on the agent-framework GenAI instrumentation so model, tool, and
+# agent-run spans are emitted with the GenAI semantic conventions.
+enable_instrumentation(enable_sensitive_data=True)
+
+tracer = trace.get_tracer(__name__)
 
 AGENT_NAME = "ai-agent"
 AGENT_INSTRUCTIONS = "You are a helpful AI assistant."
 
-# User inputs for the conversation
 USER_INPUTS = [
     "Can you tell me the gravity of Earth versus the gravity of Mars?",
 ]
 
-# Capture prompt + completion content in OTel spans. False by default for
-# privacy reasons — turn it on for workshops and demos, leave it off for any
-# data with regulated PII.
-os.environ["AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED"] = "true"
-
-from azure.monitor.opentelemetry import configure_azure_monitor
-
-configure_azure_monitor(connection_string=APPINSIGHTS_CONN)
-
-from opentelemetry import trace
-tracer = trace.get_tracer(__name__)
 
 async def main() -> None:
-
     with tracer.start_as_current_span("example-tracing"):
-        async with (
-            DefaultAzureCredential() as credential,
-            ChatAgent(
-                chat_client=AzureAIAgentClient(
-                    project_endpoint=ENDPOINT,
-                    model_deployment_name=MODEL_DEPLOYMENT_NAME,
-                    async_credential=credential,
-                    agent_name=AGENT_NAME,
-                    agent_id=None,  # Since no Agent ID is provided, the agent will be automatically created and deleted after getting response
-                ),
-                instructions=AGENT_INSTRUCTIONS,
-                max_tokens=4096,
-                tools=None, 
-            ) as agent
-        ):
-            # Create a new thread that will be reused
-            thread = agent.get_new_thread()
+        client = FoundryChatClient(
+            model=MODEL,
+            project_endpoint=ENDPOINT,
+            credential=AzureCliCredential(),
+        )
 
-            # Process user messages
+        async with Agent(
+            client=client,
+            name=AGENT_NAME,
+            instructions=AGENT_INSTRUCTIONS,
+        ) as agent:
             for user_input in USER_INPUTS:
                 print(f"\n# User: '{user_input}'")
-                async for chunk in agent.run_stream([user_input], thread=thread):
-                    if chunk.text:
-                        print(chunk.text, end="")
-                    elif (
-                        chunk.raw_representation
-                        and chunk.raw_representation.raw_representation
-                        and hasattr(chunk.raw_representation.raw_representation, "status")
-                        and hasattr(chunk.raw_representation.raw_representation, "type")
-                        and chunk.raw_representation.raw_representation.status == "completed"
-                        and hasattr(chunk.raw_representation.raw_representation, "step_details")
-                        and hasattr(chunk.raw_representation.raw_representation.step_details, "tool_calls")
-                    ):
-                        print("")
-                        print("Tool calls: ", chunk.raw_representation.raw_representation.step_details.tool_calls)
-                print("")
-            
+                print(f"# {AGENT_NAME}: ", end="", flush=True)
+
+                async for chunk in await agent.run(user_input, stream=True):
+                    for content in chunk.contents:
+                        data = content.to_dict()
+                        if data.get("type") == "text" and data.get("text"):
+                            print(data["text"], end="", flush=True)
+                print()
+
             print("\n--- All tasks completed successfully ---")
 
-        # Give additional time for all async cleanup to complete
-        await asyncio.sleep(1.0)
+    # Give the BatchSpanProcessor a tick to flush before the process exits.
+    # In production code, prefer trace.get_tracer_provider().shutdown() in a
+    # finally block.
+    await asyncio.sleep(2.0)
+
 
 if __name__ == "__main__":
     try:
