@@ -1,10 +1,8 @@
 # Microsoft Foundry + Entra Agent ID Sidecar
 
-A visual, hands-on demonstration of how AI agents use **Microsoft Entra Agent ID** — via the official **Microsoft Entra SDK auth sidecar** — to securely call downstream APIs. This variant uses **Microsoft Foundry** as the LLM/agent runtime, proving the sidecar pattern works identically whether the model is local (Ollama), in AWS (Bedrock), or in your Foundry project.
+A visual, hands-on demonstration of how AI agents use **Microsoft Entra Agent ID** (via the official **Microsoft Entra SDK auth sidecar**) to securely call downstream APIs. This variant uses **Microsoft Foundry** as the LLM/agent runtime, proving the sidecar pattern works identically whether the model is local (Ollama), in AWS (Bedrock), or in your Foundry project.
 
-> **Looking for other LLM variants?**
-> - [`sidecar/dev`](../dev/README.md) — Ollama (offline, local)
-> - [`sidecar/aws`](../aws/README.md) — AWS Bedrock (Claude)
+> **Looking for other LLM variants?** The **Ollama** (offline, local) and **AWS Bedrock** (Claude) editions live in a separate, multi-cloud companion repo: [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo).
 >
 > **New to Agent ID?** Start with [The Sidecar Design Pattern](../README.md) for the concepts.
 
@@ -132,9 +130,9 @@ The sidecar sits between your agent and Microsoft Entra ID. The agent **never** 
 ## 4. Prerequisites
 
 - Docker Desktop (or Docker + compose plugin)
-- A Microsoft Entra tenant with the Blueprint + Agent Identity provisioned — see [`../../scripts/README.md`](../../scripts/README.md)
-- A Microsoft Foundry project with at least one chat model deployed (e.g. `gpt-4o-mini`)
-- *Either* a Foundry API key *or* Azure CLI installed locally (`az login`) for `DefaultAzureCredential`
+- A Microsoft Entra tenant with the Blueprint + Agent Identity provisioned. The PowerShell bootstrap (`Start-EntraAgentIDWorkflow`) lives in the multi-cloud companion repo: [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo).
+- A Microsoft Foundry project with at least one chat model deployed (for example, `gpt-4o-mini`)
+- Either a Foundry API key, or Azure CLI installed locally (`az login`) for `DefaultAzureCredential`
 
 ### 4.1 Grant Microsoft Graph permissions to the Agent Identity
 
@@ -144,7 +142,7 @@ The **OBO** toggle in this demo asks the Agent Identity (`AGENT_CLIENT_ID`) to e
 
 > **Note:** The **Autonomous** toggle works without any Graph permission on the Agent Identity — it just mints an FMI token and inspects it; it never actually calls Graph. Only OBO strictly needs the grant below.
 
-Grant these two permissions (mirrors the AWS Bedrock sample one-for-one):
+Grant these two permissions (same set used by the AWS Bedrock and Ollama editions in [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo)):
 
 | Permission | Type | Required for | Why |
 |---|---|---|---|
@@ -264,7 +262,7 @@ The agent talks to Foundry via the [Azure AI Inference](https://learn.microsoft.
 | `requirements.txt` | `flask`, `flask-cors`, `requests`, `langchain*`, `langchain-azure-ai`, `azure-identity` |
 | `.env.example` | Template for required env vars |
 
-The downstream `weather-api` container is shared with the `dev/` and `aws/` variants — see [`../weather-api/README.md`](../weather-api/README.md).
+The downstream `weather-api` container is the same image used by the AWS Bedrock and Ollama editions in [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo). See [`../weather-api/README.md`](../weather-api/README.md) for its config.
 
 ---
 
@@ -404,7 +402,9 @@ Once data is flowing (see §8.1), there are four entry points. Replace `<SUB>`, 
 
 #### ⭐ 0. Full chat-turn timeline (one query, picks the latest turn automatically)
 
-The single most useful query — chronological waterfall of every span in one agent run (user prompt → LLM thinking → tool calls + results → final answer), plus a summary row with totals, wall-clock time, and gpt-4o list-price cost.
+The single most useful query. Chronological waterfall of every span in one agent run (user prompt, then LLM thinking, then tool calls + results, then the final answer), plus a summary row with totals, wall-clock time, and gpt-4o list-price cost.
+
+> **Why this query pins on `azure.ai.openai`, not `az.ai.inference`:** the agent has two instrumentors that both wrap each LLM call. The Microsoft `az.ai.inference` instrumentor only emits metadata (model, tokens). The Traceloop `azure.ai.openai` wrapper emits the prompts, completions, and tool definitions, and it fires on every LLM round-trip (the Microsoft instrumentor occasionally skips one). We pin and count from the Traceloop spans because they are the canonical record of an LLM call. We still show both span rows in the waterfall so you can see the full instrumentation depth.
 
 ```kusto
 // To pin a specific turn, replace the target_op block with:
@@ -412,7 +412,7 @@ The single most useful query — chronological waterfall of every span in one ag
 let target_op = toscalar(
     dependencies
     | where timestamp > ago(1h)
-    | where tostring(customDimensions["gen_ai.system"]) == "az.ai.inference"
+    | where tostring(customDimensions["gen_ai.provider.name"]) == "azure.ai.openai"
     | top 1 by timestamp desc
     | project operation_Id
 );
@@ -421,21 +421,23 @@ let events = (
     | where operation_Id == target_op
     | extend cd = customDimensions
     | extend category = case(
-        tostring(cd["gen_ai.system"]) == "az.ai.inference", "LLM",
-        name startswith "execute_tool",                     "TOOL",
-        name startswith "invoke_agent",                     "AGENT",
+        tostring(cd["gen_ai.system"])        == "az.ai.inference", "LLM-INFER",
+        tostring(cd["gen_ai.provider.name"]) == "azure.ai.openai", "LLM-LC",
+        name startswith "execute_tool",                            "TOOL",
+        name startswith "invoke_agent",                            "AGENT",
         name startswith "LangGraph"
-            or name startswith "execute_task",              "ORCHESTR",
-        itemType == "request",                              "HTTP-IN",
-        type in ("Http","HTTP"),                            "HTTP-OUT",
-                                                            "other")
+            or name startswith "execute_task",                     "ORCHESTR",
+        itemType == "request",                                     "HTTP-IN",
+        type in ("Http","HTTP"),                                   "HTTP-OUT",
+                                                                   "other")
     | extend
         model      = tostring(cd["gen_ai.response.model"]),
         in_tok     = tolong(cd["gen_ai.usage.input_tokens"]),
         out_tok    = tolong(cd["gen_ai.usage.output_tokens"]),
         tool       = tostring(cd["gen_ai.tool.name"]),
-        tool_arg   = tostring(cd["gen_ai.tool.call.arguments"]),
-        tool_res   = tostring(cd["gen_ai.tool.call.result"]),
+        // Tool args/result are wrapped in LangChain envelopes. Reach in and pull the clean values.
+        tool_arg   = tostring(parse_json(tostring(cd["gen_ai.tool.call.arguments"])).input_str),
+        tool_res   = tostring(parse_json(tostring(cd["gen_ai.tool.call.result"])).output.kwargs.content),
         prompt     = tostring(cd["gen_ai.input.messages"]),
         completion = tostring(cd["gen_ai.output.messages"])
 );
@@ -455,13 +457,14 @@ let waterfall = (
 );
 let summary = (
     events
+    // Sum tokens from ONLY the Traceloop span (LLM-LC) to avoid double-counting the same LLM call.
     | summarize
         wall_ms    = tolong(datetime_diff('millisecond', max(timestamp), min(timestamp))),
-        llm_calls  = count_distinctif(itemId, category == "LLM"),
+        llm_calls  = count_distinctif(itemId, category == "LLM-LC"),
         tool_calls = count_distinctif(itemId, category == "TOOL"),
         http_calls = count_distinctif(itemId, category in ("HTTP-OUT","HTTP-IN")),
-        in_tokens  = tolong(sum(in_tok)),
-        out_tokens = tolong(sum(out_tok))
+        in_tokens  = tolong(sumif(in_tok,  category == "LLM-LC")),
+        out_tokens = tolong(sumif(out_tok, category == "LLM-LC"))
     | extend cost_usd = round(in_tokens*2.50/1e6 + out_tokens*10.00/1e6, 6)
     | extend
         timestamp   = now(),
@@ -485,25 +488,26 @@ union waterfall, summary
 ```
 
 > **Log Analytics gotchas** found while iterating on this query:
-> - **Don't name a `let` `timeline`** — `timeline` is reserved (used by `render timeline` visualizations). Use `waterfall`, `events`, etc.
-> - **Don't name a column `kind`** — it's a reserved parameter token (`join kind=...`). Use `category` or any other identifier.
-> - **Wrap multi-line tabular `let` bodies in parentheses** — `let x = ( union ... | ... );` — most workspaces require parens; without them the parser may stop at the next `let`.
-> - **No inline lambda functions** — `let trim = (s,n) { iif(...) };` is rejected. Inline the `iif(...)` expression directly in `project`.
-> - **Stick to ASCII in string literals** — some workspace configurations reject extended Unicode (emoji) in `case(...)` / `strcat(...)` arguments.
-> - **Don't reference a column you're defining in the same `extend`** — split into two `extend` blocks (e.g. compute `cost_usd` first, then use it in `strcat`).
-> - **Cast numeric types consistently before `union`** — `tolong(duration)` + `tolong(datetime_diff(...))` etc.; otherwise `union` will emit duplicate `_int` / `_long` columns.
+> - **Don't name a `let` `timeline`**. `timeline` is reserved (used by `render timeline` visualizations). Use `waterfall`, `events`, etc.
+> - **Don't name a column `kind`**. It's a reserved parameter token (`join kind=...`). Use `category` or any other identifier.
+> - **Wrap multi-line tabular `let` bodies in parentheses**, e.g. `let x = ( union ... | ... );`. Most workspaces require parens. Without them the parser may stop at the next `let`.
+> - **No inline lambda functions**. `let trim = (s,n) { iif(...) };` is rejected. Inline the `iif(...)` expression directly in `project`.
+> - **Stick to ASCII in string literals**. Some workspace configurations reject extended Unicode (emoji) in `case(...)` or `strcat(...)` arguments.
+> - **Don't reference a column you're defining in the same `extend`**. Split into two `extend` blocks (for example, compute `cost_usd` first, then use it in `strcat`).
+> - **Cast numeric types consistently before `union`**, e.g. `tolong(duration)` and `tolong(datetime_diff(...))`. Otherwise `union` will emit duplicate `_int` and `_long` columns.
+> - **Don't double-count tokens from dual instrumentation**. The same LLM call is wrapped by BOTH the Microsoft `az.ai.inference` instrumentor and the Traceloop `azure.ai.openai` wrapper, and each emits its own `gen_ai.usage.input_tokens`. A plain `sum(in_tok)` doubles the number. Use `sumif(in_tok, category == "LLM-LC")` to count only the Traceloop span (which always fires).
 
-**Returns** (one row per span, chronological, plus a final `📊 SUMMARY` row):
+**Returns** (one row per span, chronological, plus a final `SUMMARY` row):
 
 | column | what it shows |
 |---|---|
-| `timestamp` / `step_ms` | When the step started, how long it took |
-| `kind` | 🤖 AGENT / 🔁 ORCHESTR / 🧠 LLM / 🔧 TOOL / 🌐 HTTP / 📊 SUMMARY |
-| `name`, `model` | Span name (e.g. `chat gpt-4o`); model only on LLM rows |
-| `in_tok` / `out_tok` | Token counts on LLM rows |
-| `tool`, `tool_arg`, `tool_result` | Filled on TOOL rows |
-| `user_prompt`, `llm_answer` | Actual prompt + completion content (trimmed to 180–280 chars) |
-| `📊 SUMMARY` row | Wall-clock ms, call counts per layer, total in/out tokens, gpt-4o list-price cost |
+| `timestamp`, `step_ms` | When the step started, how long it took |
+| `category` | `AGENT`, `ORCHESTR`, `LLM-INFER` (Microsoft inference SDK span), `LLM-LC` (Traceloop LangChain wrapper span), `TOOL`, `HTTP-OUT`, `HTTP-IN`, `SUMMARY` |
+| `name`, `model` | Span name (for example `chat`, `AzureAIChatCompletionsModel.chat`). `model` populated on LLM rows only |
+| `in_tok`, `out_tok` | Token counts on LLM rows. The same call shows in both LLM-INFER and LLM-LC rows |
+| `tool`, `tool_arg`, `tool_result` | Filled on TOOL rows. `tool_arg` is the clean argument string (for example `{'city': 'Austin'}`), `tool_result` is the tool's plain-text return value |
+| `user_prompt`, `llm_answer` | Actual prompt + completion content (trimmed to 180 or 280 chars). Populated on LLM-LC rows only |
+| `SUMMARY` row | Wall-clock ms, call counts per layer, total in/out tokens (counted once from LLM-LC), gpt-4o list-price cost |
 
 #### A. Confirm tracing is alive
 
@@ -513,7 +517,7 @@ dependencies
 | summarize spans = count(), last_seen = max(timestamp) by cloud_RoleName
 ```
 
-Should show `llm-agent-foundry` with a recent `last_seen`.
+Should show one row with a recent `last_seen`. **In this sample, `cloud_RoleName` is `unknown_service`**, because `configure_azure_monitor(resource_attributes={'service.name': ...})` is not picked up as `cloud_RoleName` by the installed Azure Monitor exporter. To override, set `OTEL_SERVICE_NAME=llm-agent-foundry` in the `llm-agent-foundry` service's `environment:` block in `docker-compose.yml` and recreate the container. Until then, every other query in this section filters by span attributes (not by `cloud_RoleName`) so they still work.
 
 #### B. Inventory of span sources (which instrumentors are firing)
 
@@ -570,33 +574,103 @@ Group by `bin(timestamp, 1d)` (and drop `operation_Id`) for a daily spend rollup
 
 #### E. Full prompts and completions
 
+> **Heads-up: prompts/completions live on the Traceloop spans, not the Microsoft `az.ai.inference` ones.** The Microsoft `azure-ai-inference` instrumentor only emits metadata (model, tokens, finish reason). The Traceloop LangChain wrapper is the one that records `gen_ai.input.messages`, `gen_ai.output.messages`, and `gen_ai.tool.definitions`. Both spans cover the same LLM call, just from different layers. Filter on `gen_ai.provider.name == "azure.ai.openai"` (or span name `AzureAIChatCompletionsModel.chat`).
+
 ```kql
 dependencies
 | where timestamp > ago(1h)
-| where tostring(customDimensions["gen_ai.system"]) == "az.ai.inference"
+| where tostring(customDimensions["gen_ai.provider.name"]) == "azure.ai.openai"
 | project timestamp,
+          op         = operation_Id,
+          model      = tostring(customDimensions["traceloop.association.properties.ls_model_name"]),
+          in_tokens  = toint(customDimensions["gen_ai.usage.input_tokens"]),
+          out_tokens = toint(customDimensions["gen_ai.usage.output_tokens"]),
           prompt     = tostring(customDimensions["gen_ai.input.messages"]),
           completion = tostring(customDimensions["gen_ai.output.messages"]),
           tools      = tostring(customDimensions["gen_ai.tool.definitions"])
 | order by timestamp desc
 ```
 
-> Prompts and completions are only captured when `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` and `AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED=true` (set automatically by this sample when tracing is enabled).
+`prompt` / `completion` are JSON arrays of `{role, parts[]}` objects. `parts[]` items are typed: `{"type":"text","content":...}` for normal text, `{"type":"tool_call","id":...,"name":...,"arguments":{...}}` for assistant tool calls, and `{"type":"tool_call_response","id":...,"response":...}` for tool results. To pull just the user-visible text:
+
+```kql
+dependencies
+| where timestamp > ago(1h)
+| where tostring(customDimensions["gen_ai.provider.name"]) == "azure.ai.openai"
+| extend prompt_json     = parse_json(tostring(customDimensions["gen_ai.input.messages"]))
+| extend completion_json = parse_json(tostring(customDimensions["gen_ai.output.messages"]))
+| mv-expand p = prompt_json
+| extend user_text = tostring(p.parts[0].content), role = tostring(p.role)
+| where role == "user"
+| project timestamp, op = operation_Id, user_text,
+          assistant_text = tostring(completion_json[0].parts[0].content)
+| order by timestamp desc
+```
+
+> Content capture must be enabled (this sample sets `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, `TRACELOOP_TRACE_CONTENT=true`, and `AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED=true` automatically when tracing is on).
 
 #### F. Tool calls (what the agent called, what it got back)
+
+> The raw `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result` are wrapped in LangChain envelopes (`{"input_str": "...", "tags": [...], "metadata": {...}}` for args, `{"output": {"lc": 1, "type": "constructor", ..., "kwargs": {"content": "..."}}}` for the result). To get readable values, parse the JSON and reach in. The query below does both.
 
 ```kql
 dependencies
 | where timestamp > ago(1h)
 | where name startswith "execute_tool"
+| extend args = parse_json(tostring(customDimensions["gen_ai.tool.call.arguments"]))
+| extend res  = parse_json(tostring(customDimensions["gen_ai.tool.call.result"]))
 | project timestamp,
           op = operation_Id,
           tool      = tostring(customDimensions["gen_ai.tool.name"]),
-          arguments = tostring(customDimensions["gen_ai.tool.call.arguments"]),
-          result    = tostring(customDimensions["gen_ai.tool.call.result"]),
+          arguments = tostring(args.input_str),
+          result    = tostring(res.output.kwargs.content),
           duration_ms = duration
 | order by timestamp desc
 ```
+
+Example rows (last 1h):
+
+| tool | arguments | result (truncated) | duration_ms |
+|---|---|---|---|
+| `get_weather` | `{'city': 'Austin'}` | `Weather for Austin: Temperature 80°F, Overcast, Humidity 91%...` | 1750 |
+| `get_weather` | `{'city': 'Dallas'}` | `Weather for Dallas: Temperature 76°F, Overcast, Humidity 75%...` | 657 |
+
+##### F.1 The two HTTP hops behind `execute_tool get_weather` (token-chain proof)
+
+When `get_weather` runs inside the agent, two outbound HTTP calls happen inside that one tool span. Together they prove the **TR token** the sidecar minted on behalf of the Agent Identity was successfully validated by the weather API.
+
+```kql
+let target_op = toscalar(
+    dependencies
+    | where timestamp > ago(15m)
+    | where name == "invoke_agent LangGraph"
+    | top 1 by timestamp desc
+    | project operation_Id);
+dependencies
+| where operation_Id == target_op
+| where type in ("Http","HTTP")
+| where target has "sidecar" or target has "weather-api"
+| project timestamp, name, target, resultCode, duration_ms = duration
+| order by timestamp asc
+```
+
+You should see exactly two rows per tool call, in this order. The exact sidecar endpoint name depends on which token flow the agent ran:
+
+**Autonomous flow** (token_flow=autonomous, sidecar runs as the Agent Identity directly):
+
+| name | target | resultCode | meaning |
+|---|---|---|---|
+| `GET /AuthorizationHeaderUnauthenticated/graph-app` | `sidecar:5000` | `200` | Sidecar minted the TR token from the Agent Identity (app-only, `RequestAppToken=true`) |
+| `GET /weather` | `weather-api:8080` | `200` | Weather API validated the TR token (JWKS, RS256, issuer, audience) and returned Open-Meteo data |
+
+**OBO flow** (token_flow=obo, sidecar uses the user assertion):
+
+| name | target | resultCode | meaning |
+|---|---|---|---|
+| `GET /AuthorizationHeader/graph` | `sidecar:5000` | `200` | Sidecar exchanged the user's Tc for the downstream TR (on-behalf-of) |
+| `GET /weather` | `weather-api:8080` | `200` | Weather API validated the TR token and returned Open-Meteo data |
+
+A non-`200` on the second row means the weather API rejected the token. A non-`200` on the first row means the sidecar failed to mint or exchange (check the sidecar container logs for the underlying Entra error).
 
 #### G. Full span tree for one chat turn
 
@@ -612,28 +686,58 @@ To find an `operation_Id`, run query C/D, then copy the `op` value.
 
 #### H. Latency breakdown per layer
 
+> Order of `case(...)` branches matters. `execute_tool` spans carry `gen_ai.provider.name=langgraph`, so a LangGraph branch placed before the Tool branch will swallow them. Also, dependency `type` is `HTTP` in uppercase (not `Http`).
+
 ```kql
 dependencies
 | where timestamp > ago(1h)
 | extend layer = case(
+    name startswith "execute_tool",                                  "Tool",
     tostring(customDimensions["gen_ai.system"]) == "az.ai.inference", "LLM (inference SDK)",
+    tostring(customDimensions["gen_ai.provider.name"]) == "azure.ai.openai", "LLM (LangChain wrapper)",
     tostring(customDimensions["gen_ai.provider.name"]) == "langgraph", "LangGraph (orchestration)",
-    name startswith "execute_tool", "Tool",
-    type == "Http",                "HTTP",
-    "Other")
+    type in ("Http","HTTP"),                                          "HTTP",
+                                                                      "Other")
 | summarize p50 = percentile(duration, 50),
             p95 = percentile(duration, 95),
             calls = count() by layer
 | order by p95 desc
 ```
 
+Expected output shape (from a recent run):
+
+| layer | p50 (ms) | p95 (ms) | calls |
+|---|---|---|---|
+| LangGraph (orchestration) | ~2100 | ~4300 | many |
+| LLM (LangChain wrapper) | ~900 | ~2500 | one per LLM round-trip |
+| LLM (inference SDK) | ~1850 | ~2500 | usually one per LLM round-trip |
+| HTTP | ~800 | ~2500 | sidecar + weather-api + Foundry POSTs |
+| Tool | ~600 | ~1750 | one per `execute_tool` |
+
 #### I. Errors and failed dependencies
+
+> The Azure Monitor SDK probes `http://169.254.169.254/metadata/instance/compute` at startup to detect if it's running on an Azure VM. Inside Docker that probe always fails with a connect-timeout, which would otherwise dominate this query. The filter below excludes that noise so only real app errors show.
 
 ```kql
 union dependencies, requests, exceptions
 | where timestamp > ago(1h)
 | where success == false or itemType == "exception"
-| project timestamp, itemType, name, resultCode, problemId = tostring(parse_json(tostring(details))[0].typeName)
+// Exclude Azure Monitor SDK's IMDS probe (always fails in Docker, not a real error)
+| where not(name has "metadata/instance")
+| where not(target has "169.254.169.254")
+| where not(tostring(customDimensions["exception.message"]) has "169.254.169.254")
+| project timestamp, itemType, name, target, resultCode,
+          problemId = tostring(parse_json(tostring(details))[0].typeName)
+| order by timestamp desc
+```
+
+On a healthy run this returns zero rows. To see exception detail for a failure, drop the filters and join into the `exceptions` table directly:
+
+```kql
+exceptions
+| where timestamp > ago(1h)
+| where not(outerMessage has "169.254.169.254")
+| project timestamp, type, outerMessage, method, operation_Id
 | order by timestamp desc
 ```
 
@@ -648,8 +752,8 @@ In Azure (App Service / Container Apps) you typically:
 
 ## 9. Notes & known limitations
 
-- **Demo audience reuse.** Like the `dev/` and `aws/` variants, the sidecar is configured to mint Graph-scoped tokens (`https://graph.microsoft.com/.default`) for the weather API. This keeps the sample runnable with a single Blueprint app registration; in production you'd register the weather API as its own resource (`api://<weather-api-app-id>/...`) and validate that audience strictly.
-- **Single-user demo.** `_current_user_token` is module-level for simplicity, mirroring `dev/` and `aws/`. Use a per-request closure or `contextvars` before exposing this to concurrent users.
+- **Demo audience reuse.** Like the AWS Bedrock and Ollama editions in [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo), the sidecar is configured to mint Graph-scoped tokens (`https://graph.microsoft.com/.default`) for the weather API. This keeps the sample runnable with a single Blueprint app registration. In production you'd register the weather API as its own resource (`api://<weather-api-app-id>/...`) and validate that audience strictly.
+- **Single-user demo.** `_current_user_token` is module-level for simplicity, mirroring the AWS Bedrock and Ollama editions. Use a per-request closure or `contextvars` before exposing this to concurrent users.
 - **Foundry endpoint format.** Use the full `/openai/v1` path on AI Services endpoints — `langchain-azure-ai` targets the Foundry OpenAI-compatible API. Older `/models` URLs still resolve to the same backend but emit a deprecation warning.
 - **Flask debug reloader is on.** Fine for the demo; disable in any deployed environment.
 - **CORS is `*`.** Demo only; lock down origins in production.

@@ -1,17 +1,13 @@
 # The Sidecar Design Pattern
 
-How the **Microsoft Entra Agent ID sidecar** lets an AI agent call downstream APIs with a secure, per-agent identity — without the agent code ever seeing a secret.
+How the **Microsoft Entra Agent ID sidecar** lets an AI agent call downstream APIs with a secure, per-agent identity, without the agent code ever seeing a secret.
 
 For runnable samples, see:
-- [`dev/`](dev/README.md) — local-LLM (Ollama) edition
-- [`aws/`](aws/README.md) — AWS Bedrock (Claude) edition
-- [`foundry/`](foundry/README.md) — Microsoft Foundry edition
-- [`weather-api/`](weather-api/README.md) — shared downstream API used by both
+- [`foundry/`](foundry/README.md) is the **Microsoft Foundry** edition (the one in this repo).
+- The local-LLM (**Ollama**) and **AWS Bedrock** (Claude) editions live in a separate, multi-cloud companion repo: [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo).
+- [`weather-api/`](weather-api/README.md) is the shared downstream API used by every edition.
 
-For the PowerShell bootstrap that creates the Entra objects used by every sample, see [`../scripts/README.md`](../scripts/README.md).
-
-> [!TIP]
-> **Deploying these samples to Azure?** Use the AI-assisted skills for a faster, less error-prone path than running every command by hand: [`deploy-agent-aca-dev`](../.claude/skills/deploy-agent-aca-dev/SKILL.md) (local-LLM on ACA) and [`deploy-agent-aca-aws`](../.claude/skills/deploy-agent-aca-aws/SKILL.md) (AWS Bedrock on ACA). Each skill works with Claude Code and GitHub Copilot Chat and typically cuts a multi-hour manual deploy down to minutes.
+For the PowerShell bootstrap that creates the Blueprint, Agent Identity, and Client SPA used by every edition (`Start-EntraAgentIDWorkflow`), see the [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo) repo.
 
 ## The problem
 
@@ -53,7 +49,7 @@ The security boundary is explicit: the sidecar has no host port. Only services i
 | **Sidecar container** | Runs client-credentials and OBO flows. Knows the Blueprint credential. | Next to your agent |
 | **Agent container** | Your application code. Asks the sidecar for headers. | Your pod / compose / App Service |
 
-Provisioning is covered in [`../scripts/README.md`](../scripts/README.md) — the `Start-EntraAgentIDWorkflow` PowerShell cmdlet creates all three Entra objects in one shot.
+Provisioning is covered in the multi-cloud companion repo [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo). The `Start-EntraAgentIDWorkflow` PowerShell cmdlet creates all three Entra objects in one shot.
 
 ## What you'll learn by running the samples
 
@@ -65,13 +61,11 @@ Provisioning is covered in [`../scripts/README.md`](../scripts/README.md) — th
 
 ## Next steps
 
-| To… | Go to |
+| To... | Go to |
 |---|---|
-| Set up Blueprint + Agent Identity in your Entra tenant | [`../scripts/README.md`](../scripts/README.md) |
-| Run a local-LLM demo in five minutes | [`dev/README.md`](dev/README.md) |
-| Run the same demo against AWS Bedrock | [`aws/README.md`](aws/README.md) |
-| Run the same demo against Microsoft Foundry | [`foundry/README.md`](foundry/README.md) |
-| Deploy to Azure Container Apps (no stored secrets) | [`../deploy/azure/container-apps/`](../deploy/azure/container-apps/) |
+| Set up Blueprint + Agent Identity in your Entra tenant | [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo) |
+| Run the demo against **Microsoft Foundry** | [`foundry/README.md`](foundry/README.md) |
+| Run the same demo against **AWS Bedrock** or **local Ollama** | [`razi-rais/3P-Agent-ID-Demo`](https://github.com/razi-rais/3P-Agent-ID-Demo) |
 
 ## Further reading
 
