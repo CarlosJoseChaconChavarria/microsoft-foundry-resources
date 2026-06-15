@@ -29,15 +29,19 @@ Cleanup:
 > python -m venv demos
 > source demos/bin/activate     # macOS / Linux
 > demos\Scripts\activate        # Windows
-> pip install agent-framework httpx azure-monitor-opentelemetry python-dotenv --pre
+> pip install agent-framework agent-framework-foundry httpx azure-monitor-opentelemetry python-dotenv
 > az login
 > python 02c-hybrid-agent.py
 """
 
 import asyncio
+import os
+from pathlib import Path
 
 import httpx
-import os
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from agent_framework.foundry import FoundryAgent
 from azure.identity import AzureCliCredential

@@ -4,13 +4,18 @@ r"""Build an MCP-enabled Agent using Microsoft Agent Framework v1.6+ (GA)
 > python -m venv demos
 > source demos/bin/activate     # macOS / Linux
 > demos\Scripts\activate        # Windows
-> pip install agent-framework azure-monitor-opentelemetry python-dotenv --pre
+> pip install agent-framework agent-framework-foundry azure-monitor-opentelemetry python-dotenv
 > az login                      # FoundryChatClient uses your Azure CLI credentials
 > python 02-mcp-tool-agent.py
 """
 
 import asyncio
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
@@ -49,7 +54,7 @@ async def main() -> None:
     # every tool call is safe. For any MCP server with write/destructive
     # tools, use approval_mode="always_require" (or a per-tool dict).
     mcp_tool = client.get_mcp_tool(
-        name="Microsoft Learn MCP",
+        name="MicrosoftLearn",
         url="https://learn.microsoft.com/api/mcp",
         approval_mode="never_require",
     )

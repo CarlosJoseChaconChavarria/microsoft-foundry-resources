@@ -35,6 +35,7 @@
 - [Observability — `_observability.py` explained](#observability--_observabilitypy-explained)
 - [The shared `.env` file](#the-shared-env-file)
 - [Verifying traces with `verify_observability.py`](#verifying-traces-with-verify_observabilitypy)
+- [KQL cookbook (run these in the portal)](#kql-cookbook-run-these-in-the-portal)
 - [Troubleshooting](#troubleshooting)
 - [Exercises](#exercises)
 - [What you've learned](#what-youve-learned)
@@ -46,13 +47,12 @@
 
 By the end of this lab you will be able to:
 
-1. **Explain MCP** — what it is, what problem it solves, and how it differs
+1. **Explain MCP**, what it is, what problem it solves, and how it differs
    from "the agent calls a Python function".
 2. **Attach a remote MCP server** as a tool to a Foundry agent in three lines.
 3. **Choose the right pattern** (code vs portal vs hybrid) for defining
    agents in production.
-4. **Read a `FoundryChatClient` vs `AzureAIAgentClient`** — and explain why
-   they coexist.
+4. **Use `FoundryChatClient` and `FoundryAgent`** and know when to use each.
 5. **Light up Application Insights tracing** so every prompt, completion,
    and tool call becomes a queryable span.
 
@@ -163,11 +163,16 @@ and discarded.
 
 Open [`02-mcp-tool-agent.py`](02-mcp-tool-agent.py) side-by-side.
 
-#### Imports (lines 12–19)
+#### Imports
 
 ```python
 import asyncio
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
@@ -176,20 +181,20 @@ from azure.identity import AzureCliCredential
 from _observability import init_observability
 ```
 
-| Line | Import                                                  | What it does                                                                                                                                                                                                                                                                                                          |
-| ---- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 15   | `from agent_framework import Agent`                     | A simpler `Agent` class (vs sample 01's `ChatAgent`). Same idea, slightly different API surface — the `Agent` class is the path you'll see in newer Agent Framework docs.                                                                                                                                                |
-| 16   | `from agent_framework.foundry import FoundryChatClient` | **A different client than sample 01 used.** This one talks to the newer **Foundry Inference** endpoint rather than the legacy **Azure AI Agents** endpoint. `FoundryChatClient` is what unlocks `get_mcp_tool()` (see line 51).                                                                                       |
-| 17   | `from azure.identity import AzureCliCredential`         | Synchronous CLI credential. We use the sync one (not `.aio`) because `FoundryChatClient` accepts both — and the sync one removes the need for `async with` ceremony on the credential.                                                                                                                                |
-| 19   | `from _observability import init_observability`         | The shared observability module — see [its dedicated section below](#observability--_observabilitypy-explained).                                                                                                                                                                                                       |
+| Import | What it does |
+| ------ | ------------ |
+| `from agent_framework import Agent` | The current top-level agent class. Same building block you used in sample 01. |
+| `from agent_framework.foundry import FoundryChatClient` | Foundry-specific chat client. It is the path that unlocks `get_mcp_tool()`. The package on PyPI is `agent-framework-foundry`. |
+| `from azure.identity import AzureCliCredential` | Synchronous CLI credential. The sync version removes the need for `async with` ceremony on the credential. |
+| `from _observability import init_observability` | The shared observability module. See [its dedicated section below](#observability--_observabilitypy-explained). |
+| `load_dotenv(...)` | Reads `.env` from the same folder as the script. Done before importing `PROJECT_ENDPOINT` so module-level `os.environ.get` calls see the file contents. |
 
-> **Deep dive · Why two different clients in the same framework?** Microsoft
-> Foundry is in active evolution. The **`AzureAIAgentClient`** (sample 01)
-> talks to the **Azure AI Agents** REST surface — stable, deployed-agent
-> oriented, MCP-aware in preview. The **`FoundryChatClient`** talks to the
-> **Foundry Inference** REST surface — newer, stateless, **MCP-first**, and
-> the path the platform is converging on. Both are supported. Use
-> `FoundryChatClient` when you need `get_mcp_tool()` (today, in GA).
+> **Why `agent-framework-foundry` is a separate package.** The core
+> `agent-framework` package only contains provider-agnostic primitives
+> (`Agent`, sessions, harness, tools). Each backend (Foundry, OpenAI direct,
+> Azure OpenAI, Bedrock, Vertex) ships as its own package so installs stay
+> small. `agent-framework-foundry` adds the `agent_framework.foundry`
+> namespace with `FoundryChatClient`, `FoundryAgent`, and MCP tool helpers.
 
 #### Configuration (lines 21–36)
 
@@ -242,7 +247,7 @@ manager on line 57.)
 
 ```python
     mcp_tool = client.get_mcp_tool(
-        name="Microsoft Learn MCP",
+        name="MicrosoftLearn",
         url="https://learn.microsoft.com/api/mcp",
         approval_mode="never_require",
     )
@@ -250,15 +255,15 @@ manager on line 57.)
 
 This is the heart of the sample. Three arguments:
 
-| Argument         | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`           | Cosmetic label that appears in traces and the portal's tool view.                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `url`            | The MCP endpoint. **No authentication is needed** for the Microsoft Learn MCP — it's a public read-only service. Your own MCP servers (like sample 06's `get_weather`) will require an Authorization header; that's covered in sample 06's lab.                                                                                                                                                                                                                                       |
-| `approval_mode`  | The most important argument. Three values: <br>• `"never_require"` — auto-approve every tool call. Safe for **read-only public** tools like Microsoft Learn search.<br>• `"always_require"` — every tool call pauses for explicit human approval. Use for any tool that **writes** or **costs money**.<br>• A `dict` mapping tool name → mode for per-tool granularity.                                                                                                                |
+| Argument | What it does |
+| -------- | ------------ |
+| `name` | Cosmetic label that appears in traces and the portal's tool view. Avoid spaces in the label, since some server-side parsers reject them. |
+| `url` | The MCP endpoint. No authentication is needed for the Microsoft Learn MCP, because it is a public read-only service. Your own MCP servers (like sample 06's `get_weather`) will require an Authorization header. That is covered in sample 06's lab. |
+| `approval_mode` | The most important argument. Three values: `"never_require"` auto-approves every tool call (safe for read-only public tools like Microsoft Learn search), `"always_require"` pauses every tool call for explicit human approval (use for any tool that writes or costs money), or a `dict` mapping tool name to mode for per-tool granularity. |
 
-> **Deep dive · The single most important security question for tools is:
-> "what happens if the model calls this with bad arguments?"** Use
-> `approval_mode="never_require"` *only* when the answer is "nothing bad,
+> **Deep dive on tool security.** The single most important question for
+> tools is: "what happens if the model calls this with bad arguments?" Use
+> `approval_mode="never_require"` only when the answer is "nothing bad,
 > ever". Search is fine. `delete_user(id)` is not.
 
 #### Wire up the agent (lines 57–66)
@@ -294,13 +299,13 @@ cd 02-mcp-tool-agent
 # 2. Activate a venv and install
 python -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
-pip install agent-framework agent-framework-azure-ai azure-monitor-opentelemetry python-dotenv --pre
+pip install agent-framework agent-framework-foundry azure-monitor-opentelemetry python-dotenv
 
 # 3. Configure .env (one-time)
 cp .env.example .env
 # Now open .env in VS Code and fill in:
 #   FOUNDRY_PROJECT_ENDPOINT
-#   APPLICATIONINSIGHTS_CONNECTION_STRING (optional but recommended)
+#   APPLICATIONINSIGHTS_CONNECTION_STRING (optional)
 #   AZURE_TENANT_ID
 
 # 4. Sign in to Azure
@@ -774,8 +779,8 @@ a secret file.
 
 ## Verifying traces with `verify_observability.py`
 
-The repo ships a smoke-test script that runs a KQL query against your
-Application Insights and confirms it sees at least one span from each
+The repo ships a smoke-test script that runs a battery of KQL queries
+against your Application Insights and confirms it sees spans from each
 scenario:
 
 ```bash
@@ -783,7 +788,277 @@ python verify_observability.py
 ```
 
 It needs the three `APPLICATIONINSIGHTS_*` variables from `.env` to know
-which resource to query. Useful as a CI step or right after first setup.
+which resource to query. The script auto-loads `.env` from its own folder.
+Useful as a CI step or right after first setup.
+
+### Sample output
+
+After running one of the variants (here, `02-mcp-tool-agent.py`) and
+waiting roughly 60 seconds for ingestion, the script prints:
+
+```text
+Querying App Insights 'demo-project-appinsights' in 'az-foundry-demos-rg' (last 1440 min)
+
+━━━━━━━━━━━━━━━━━━━━ Q0 (HEADLINE) - Full chat-turn waterfall: USER -> TOOL -> RESULT -> ANSWER ━━━━━━━━━━━━━━━━━━━━
+  step            │ who                                  │ detail
+  ─────────────── │ ──────────────────────────────────── │ ─────────────────────────────────────────
+  (1) USER        │ human                                │ Please summarize the Azure AI Agent documentation related to MCP tool calling?
+  (2) TOOL CALL   │ MicrosoftLearn.microsoft_docs_search │ {"query":"Azure AI Agent MCP Tool Calling documentation"}
+  (3) TOOL RESULT │ mcp-server                           │ [{"type":"text","text":"{\"results\":[{\"title\":\"How to use the Model Context Protocol (MCP)...
+  (4) ANSWER      │ assistant                            │ Here is a summary of the documentation related to Azure AI Agent and MCP (Model Context Protocol)...
+
+━━━━━━━━━━━━━━━━━━━━ Q1 — Span counts per scenario ━━━━━━━━━━━━━━━━━━━━
+  scenario                   │ itemType   │ spans
+  ────────────────────────── │ ────────── │ ─────
+  foundry-workshop.pure-code │ dependency │ 3
+
+━━━━━━━━━━━━━━━━━━━━ Q2 — Tokens + cost per scenario (gpt-4o list price) ━━━━━━━━━━━━━━━━━━━━
+  scenario                   │ input_tok │ output_tok │ calls │ cost_usd
+  ────────────────────────── │ ───────── │ ────────── │ ───── │ ────────
+  foundry-workshop.pure-code │ 29960     │ 1662       │ 2     │ 0.09152
+
+━━━━━━━━━━━━━━━━━━━━ Q3 — User prompts captured per scenario ━━━━━━━━━━━━━━━━━━━━
+  ts       │ scenario                   │ agent                     │ prompt
+  ──────── │ ────────────────────────── │ ───────────────────────── │ ────────────────────────────
+  04:41:46 │ foundry-workshop.pure-code │ mcp-learn-agent-codefirst │ Please summarize the Azure AI Agent documentation related to...
+
+━━━━━━━━━━━━━━━━━━━━ Q4 — Output content types (text vs mcp_server_tool_call) ━━━━━━━━━━━━━━━━━━━━
+  ts       │ scenario                   │ tool_call_types
+  ──────── │ ────────────────────────── │ ──────────────────────────────────────────────
+  04:41:46 │ foundry-workshop.pure-code │ mcp_server_tool_call,mcp_server_tool_result,text,text
+```
+
+What each block tells you:
+
+- **Q0 (HEADLINE)** is the full chat turn replayed as a four-row waterfall.
+  This is the proof that prompt content recording is on and that the model,
+  the MCP server, and the tool result all surfaced as queryable spans.
+- **Q1** confirms the OTel pipeline reached App Insights for each scenario
+  you ran. If you also ran 02b and 02c, you would see three rows
+  (`portal-first`, `hybrid`, `pure-code`).
+- **Q2** sums tokens and applies gpt-4o list price for a rough cost
+  estimate per scenario.
+- **Q3** shows the latest captured user prompt per scenario, useful when
+  you want to confirm the agent saw what you thought it saw.
+- **Q4** lists the content part types emitted on the output stream. An
+  agent with a working tool call shows `mcp_server_tool_call` and
+  `mcp_server_tool_result` alongside `text`. An agent that never invoked
+  its tool shows only `text`.
+
+---
+
+## KQL cookbook (run these in the portal)
+
+The five queries below are the exact ones `verify_observability.py` runs.
+They are reproduced here so you can paste them straight into:
+
+- **Microsoft Foundry portal** → your project → **Tracing** → **KQL** tab, or
+- **Azure portal** → your **Application Insights** resource → **Logs**, or
+- The Azure CLI: `az monitor app-insights query --app <name> -g <rg> --analytics-query "<paste here>" -o table`
+
+Each query starts with a `let lookback` line so you can change the time
+window without editing the body. Default is 24 hours (`1440m`). Use
+`15m` while you are actively running samples.
+
+All queries assume your samples ran with `init_observability("<scenario>")`
+so spans carry `cloud_RoleName = "foundry-workshop.<scenario>"`.
+
+### Q0 - Full chat-turn waterfall (USER -> TOOL -> RESULT -> ANSWER)
+
+The headline query. Picks the most recent agent run and prints it as four
+rows, one per step in the ReAct loop. This is the proof that prompt
+recording and tool-call recording are both on.
+
+> **Foundry Tracing pane note.** This query uses multiple `let` statements,
+> which the Foundry portal's Tracing KQL pane sometimes rejects with
+> `A syntax error has been identified in the query`. If that happens, run
+> it in **Azure portal -> Application Insights -> Logs** instead, which
+> accepts the full KQL grammar. The single-statement variants
+> (Q1 to Q4 and the bonus query) work in both panes.
+
+```kql
+let lookback = 1440m;
+let target_op = toscalar(
+    dependencies
+    | where timestamp > ago(lookback)
+    | where cloud_RoleName startswith "foundry-workshop."
+    | where name startswith "invoke_agent"
+    | where isnotempty(tostring(customDimensions["gen_ai.input.messages"]))
+    | top 1 by timestamp desc
+    | project operation_Id);
+let span = dependencies
+    | where timestamp > ago(lookback)
+    | where operation_Id == target_op
+    | where name startswith "invoke_agent";
+let user_step = span
+    | extend msgs = parse_json(tostring(customDimensions["gen_ai.input.messages"]))
+    | mv-expand m = msgs
+    | mv-expand p = m.parts
+    | where tostring(m.role) == "user"
+    | project ord=0, step="(1) USER", who="human", detail=tostring(p.content);
+let agent_steps = span
+    | extend msgs = parse_json(tostring(customDimensions["gen_ai.output.messages"]))
+    | mv-expand m = msgs
+    | mv-expand p = m.parts
+    | extend ptype = tostring(p.type)
+    | extend ord  = case(ptype == "mcp_server_tool_call", 1,
+                         ptype == "mcp_server_tool_result", 2,
+                         ptype == "text", 3, 9)
+    | extend step = case(ptype == "mcp_server_tool_call",   "(2) TOOL CALL",
+                         ptype == "mcp_server_tool_result", "(3) TOOL RESULT",
+                         ptype == "text",                   "(4) ANSWER",
+                                                            ptype)
+    | extend who  = case(ptype == "mcp_server_tool_call",
+                            strcat(tostring(p.server_name), ".", tostring(p.tool_name)),
+                         ptype == "mcp_server_tool_result", "mcp-server",
+                         ptype == "text", "assistant", "")
+    | extend raw  = case(ptype == "mcp_server_tool_call",   tostring(p.arguments),
+                         ptype == "mcp_server_tool_result", tostring(p.output),
+                         ptype == "text",                   tostring(p.content), "")
+    | extend detail = iif(strlen(raw) > 120, strcat(substring(raw, 0, 120), " ..."), raw)
+    | project ord, step, who, detail;
+union user_step, agent_steps
+| order by ord asc
+| project step, who, detail
+```
+
+### Q1 - Span counts per scenario
+
+Quick sanity check that all three variants you ran have telemetry in App
+Insights. Useful right after first setup. You should see one row per
+`(scenario, itemType)` pair.
+
+```kql
+let lookback = 1440m;
+union dependencies, traces
+| where timestamp > ago(lookback)
+| where cloud_RoleName startswith "foundry-workshop."
+| summarize spans=count() by scenario=cloud_RoleName, itemType
+| order by scenario, itemType
+```
+
+### Q2 - Tokens and cost per scenario (gpt-4o list price)
+
+Sums input and output tokens, then estimates USD cost using gpt-4o list
+price ($2.50 per million input tokens, $10.00 per million output tokens).
+Swap the multipliers for your contracted price.
+
+```kql
+let lookback = 1440m;
+dependencies
+| where timestamp > ago(lookback)
+| where cloud_RoleName startswith "foundry-workshop."
+| extend in_tok=toint(customDimensions["gen_ai.usage.input_tokens"]),
+         out_tok=toint(customDimensions["gen_ai.usage.output_tokens"])
+| where isnotnull(in_tok)
+| summarize input_tok=sum(in_tok), output_tok=sum(out_tok), calls=count()
+            by scenario=cloud_RoleName
+| extend cost_usd=round(input_tok*2.5/1000000 + output_tok*10.0/1000000, 6)
+```
+
+### Q3 - User prompts captured per scenario
+
+Shows the first 60 characters of every user prompt the agent saw. Useful
+when you want to confirm "did my agent really receive what I typed?"
+without scrolling through `customDimensions`.
+
+```kql
+let lookback = 1440m;
+dependencies
+| where timestamp > ago(lookback)
+| where cloud_RoleName startswith "foundry-workshop."
+| where name startswith "invoke_agent"
+| extend msgs=parse_json(tostring(customDimensions["gen_ai.input.messages"]))
+| extend prompt=tostring(msgs[0].parts[0].content)
+| where isnotempty(prompt)
+| project ts=format_datetime(timestamp, "HH:mm:ss"),
+          scenario=cloud_RoleName,
+          agent=tostring(customDimensions["gen_ai.agent.name"]),
+          prompt=substring(prompt, 0, 60)
+| order by ts asc
+```
+
+### Q4 - Output content part types per turn
+
+Extracts every `type` field from `gen_ai.output.messages` so you can see
+at a glance which turns actually called the MCP tool versus which only
+returned plain text. Look for `mcp_server_tool_call` and
+`mcp_server_tool_result` to confirm a tool round-trip happened.
+
+```kql
+let lookback = 1440m;
+dependencies
+| where timestamp > ago(lookback)
+| where cloud_RoleName startswith "foundry-workshop."
+| where name startswith "invoke_agent"
+| extend kinds=strcat_array(extract_all(@'"type"\s*:\s*"([^"]+)"',
+            tostring(customDimensions["gen_ai.output.messages"])), ",")
+| project ts=format_datetime(timestamp, "HH:mm:ss"),
+          scenario=cloud_RoleName, tool_call_types=kinds
+| order by ts asc
+```
+
+#### How to read a `tool_call_types` row
+
+Each row lists the content parts the model emitted on the output stream,
+**in order**. The part types you will see, and what each one means:
+
+| Part type | What the model did |
+| --------- | ------------------ |
+| `mcp_server_tool_call` | Decided to call an MCP tool. Carries the tool name and JSON arguments. |
+| `mcp_server_tool_result` | The MCP server replied. Carries the tool's JSON output. |
+| `text` | An assistant text chunk. Streaming responses often arrive in more than one chunk. |
+
+So a row like `mcp_server_tool_call,mcp_server_tool_result,text,text`
+means: the model called the tool, received the result, then wrote the
+answer in two text chunks. That is exactly one pass of the ReAct loop,
+and the presence of the two `mcp_server_*` parts is your proof the MCP
+integration actually fired (rather than the model answering from its
+training data).
+
+Other shapes you will see in practice:
+
+| Sequence | What it means |
+| -------- | -------------- |
+| `text` | The model answered with no tool call. Either the question did not need a tool or the model chose not to use one. |
+| `mcp_server_tool_call,mcp_server_tool_result,text` | One tool call, one text chunk for the answer. Most common shape for short answers. |
+| `mcp_server_tool_call,mcp_server_tool_result,mcp_server_tool_call,mcp_server_tool_result,text` | The model called the tool, looked at the result, decided to call it again with different arguments, then answered. Multi-step reasoning. |
+| `mcp_server_tool_call` only | The tool call failed or was rejected by the approval policy. No result came back. Investigate Q0 or raw `customDimensions` for the error. |
+
+### Bonus - Latest run, just the assistant's final answer
+
+Handy for demos. Picks the most recent agent run and prints only the
+final assistant text. Useful as a "did it work?" one-shot.
+
+```kql
+let lookback = 1440m;
+dependencies
+| where timestamp > ago(lookback)
+| where name startswith "invoke_agent"
+| where operation_Id == toscalar(
+    dependencies
+    | where timestamp > ago(lookback)
+    | where cloud_RoleName startswith "foundry-workshop."
+    | where name startswith "invoke_agent"
+    | top 1 by timestamp desc
+    | project operation_Id)
+| extend msgs=parse_json(tostring(customDimensions["gen_ai.output.messages"]))
+| mv-expand m=msgs
+| mv-expand p=m.parts
+| where tostring(p.type) == "text"
+| project answer=tostring(p.content)
+```
+
+> **Why `toscalar()` instead of `let latest = ... ; ... in (latest)`?**
+> The Foundry portal's Tracing KQL pane rejects multi-statement scripts
+> with `A syntax error has been identified in the query`. Wrapping the
+> subquery in `toscalar()` keeps the whole query as a single statement
+> so it parses in every host (Foundry Tracing, App Insights Logs, and
+> `az monitor app-insights query`).
+
+> **Tip on saving queries.** In the Application Insights Logs blade you
+> can pin any of these as a **Query** (the **Save** button), or stitch
+> them into a **Workbook** for a single dashboard the whole team uses.
 
 ---
 
@@ -829,8 +1104,9 @@ You can now:
   portal-first, or hybrid.
 - **Read traces** from Application Insights, tagged per scenario, with
   prompt and completion content visible.
-- **Distinguish `FoundryChatClient` from `AzureAIAgentClient`** and know
-  which to use when.
+- **Use `FoundryChatClient` and `FoundryAgent`** appropriately. The chat
+  client is for code-defined agents (variant A). The agent class is for
+  invoking a server-side agent record (variants B and C).
 
 These three patterns plus tracing are the foundation of every production
 Foundry agent. Sample 03 narrows scope back to a single concept (custom

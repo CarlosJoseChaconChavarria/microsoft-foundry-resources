@@ -19,14 +19,10 @@
 - [Prerequisites](#prerequisites)
 - [The mental model](#the-mental-model)
 - [Step-by-step code walkthrough](#step-by-step-code-walkthrough)
-  - [Section 1 · Imports and `.env` loader (lines 17–26)](#section-1--imports-and-env-loader-lines-1726)
-  - [Section 2 · Configuration constants and fail-fast check (lines 29–46)](#section-2--configuration-constants-and-fail-fast-check-lines-2946)
-  - [Section 3 · The `main()` coroutine](#section-3--the-main-coroutine)
-  - [Section 4 · The entry-point guard](#section-4--the-entry-point-guard)
 - [Running the sample](#running-the-sample)
 - [Expected output](#expected-output)
 - [Troubleshooting](#troubleshooting)
-- [Exercises — try these next](#exercises--try-these-next)
+- [Exercises, try these next](#exercises-try-these-next)
 - [What you've learned](#what-youve-learned)
 - [Where to go next](#where-to-go-next)
 
@@ -37,13 +33,11 @@
 By the end of this lab you will be able to:
 
 1. **Explain the four building blocks** of every Microsoft Foundry agent: a
-   *credential*, a *client*, an *agent*, and a *thread*.
-2. **Authenticate to Azure from Python code** using `DefaultAzureCredential`
+   *credential*, a *client*, an *agent*, and a *session*.
+2. **Authenticate to Azure from Python code** using `AzureCliCredential`
    without ever embedding a secret in your source.
 3. **Send a prompt and stream a response** from a Foundry-hosted gpt-4o
    model.
-4. **Recognise the lifecycle pattern** (async context managers) that the
-   Agent Framework uses to guarantee clean shutdown.
 
 ---
 
@@ -53,7 +47,7 @@ By the end of this lab you will be able to:
 | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Python 3.10+**                                                                                                   | The Agent Framework uses modern `async` features.                                                                                                  |
 | **A Microsoft Foundry project** with a **gpt-4o** model deployment                                                 | The agent's "brain". Create one at [ai.azure.com](https://ai.azure.com); see the [Foundry quickstart](https://learn.microsoft.com/azure/ai-foundry/quickstarts/get-started-code). |
-| **Azure CLI** (`az`) signed in: `az login`                                                                         | `DefaultAzureCredential` picks up your CLI login as a credential source. No secrets in code.                                                       |
+| **Azure CLI** (`az`) signed in: `az login`                                                                         | `AzureCliCredential` picks up your CLI login as a credential source. No secrets in code.                                                       |
 | **A configured `.env` file in this folder**                                                                        | Holds your project endpoint and model name. See [Step 1 below](#step-1--configure-your-env-file).                                                  |
 | **VS Code** with the **Python** and **Azure Tools** extensions (recommended)                                       | You can click ▶ **Run Python File** in the editor and watch the streamed response in the integrated terminal. The Python extension auto-loads `.env`. |
 
@@ -96,30 +90,29 @@ Before reading any code, picture the runtime:
    │  Your laptop (Python process)    │
    │                                  │
    │   ┌────────────────────────┐     │
-   │   │ DefaultAzureCredential │ ──── reads your `az login` token ──┐
+   │   │  AzureCliCredential    │ ──── reads your `az login` token ──┐
    │   └────────────────────────┘     │                              │
    │             │                    │                              ▼
    │             ▼                    │             ┌────────────────────────┐
    │   ┌────────────────────────┐     │    HTTPS    │ Microsoft Entra ID     │
-   │   │  AzureAIAgentClient    │ ────┼────────────►│ (mints access tokens)  │
+   │   │  FoundryChatClient     │ ────┼────────────►│ (mints access tokens)  │
    │   │  (HTTP transport)      │     │             └────────────────────────┘
    │   └────────────────────────┘     │                          │
    │             │                    │                          │
    │             ▼                    │             ┌────────────────────────┐
    │   ┌────────────────────────┐     │    HTTPS    │ Microsoft Foundry      │
-   │   │  ChatAgent             │ ────┼────────────►│ project (gpt-4o)       │
+   │   │  Agent                 │ ────┼────────────►│ project (gpt-4o)       │
    │   │   • instructions       │     │             │   • model deployment   │
-   │   │   • max_tokens         │     │             │   • thread storage     │
-   │   │   • tools=None         │     │             └────────────────────────┘
-   │   └────────────────────────┘     │
+   │   │   • tools=None         │     │             │   • session storage    │
+   │   └────────────────────────┘     │             └────────────────────────┘
    │             │                    │
    │             ▼                    │
-   │   ┌────────────────────────┐     │
-   │   │  agent.run_stream(...) │     │
-   │   │  ◄── async iterator ──┘     │
-   │   │  prints text as it          │
-   │   │  arrives from the model     │
-   │   └────────────────────────┘     │
+   │   ┌────────────────────────────┐ │
+   │   │ agent.run(..., stream=True)│ │
+   │   │  ◄── async iterator ──┘    │ │
+   │   │  prints text as it         │ │
+   │   │  arrives from the model    │ │
+   │   └────────────────────────────┘ │
    └──────────────────────────────────┘
 ```
 
@@ -129,10 +122,10 @@ comfortable with them here and the rest of the workshop is a rearrangement.
 
 | Building block            | Class / function           | Responsibility                                                                                       |
 | ------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Credential**            | `DefaultAzureCredential()` | Talks to Microsoft Entra ID to get a fresh access token, transparently.                              |
-| **Client**                | `AzureAIAgentClient(...)`  | Knows the HTTP wire protocol for the Foundry **Azure AI Agents** REST API.                            |
-| **Agent**                 | `ChatAgent(...)`           | Composes the model, the instructions, the tools, and the per-call settings into one logical agent.   |
-| **Thread**                | `agent.get_new_thread()`   | Holds the conversation history (messages) so the model can answer follow-ups in context.             |
+| **Credential**            | `AzureCliCredential()`     | Talks to Microsoft Entra ID to get a fresh access token using your `az login` session.               |
+| **Client**                | `FoundryChatClient(...)`   | Knows the HTTP wire protocol for the Microsoft Foundry project endpoint.                              |
+| **Agent**                 | `Agent(...)`               | Composes the model, the instructions, the tools, and the per-call settings into one logical agent.   |
+| **Session**               | `agent.create_session()`   | Holds the conversation history (messages) so the model can answer follow-ups in context.             |
 
 ---
 
@@ -141,7 +134,7 @@ comfortable with them here and the rest of the workshop is a rearrangement.
 Open [`01-basic-agent.py`](01-basic-agent.py) side-by-side with this guide.
 We'll walk through every section.
 
-### Section 1 · Imports and `.env` loader (lines 17–26)
+### Section 1, Imports and `.env` loader
 
 ```python
 import asyncio
@@ -150,34 +143,34 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from agent_framework import ChatAgent
-from agent_framework_azure_ai import AzureAIAgentClient
-from azure.identity.aio import DefaultAzureCredential
+from agent_framework import Agent
+from agent_framework_foundry import FoundryChatClient
+from azure.identity import AzureCliCredential
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 ```
 
 **What each import is for:**
 
-| Line | Import                                                | Purpose                                                                                                                                     |
-| ---- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 17   | `asyncio`                                             | The Agent Framework is async-first. We use `asyncio.run(main())` at the bottom of the file to launch the event loop.                        |
-| 18   | `os`                                                  | Read configuration from environment variables.                                                                                              |
-| 19   | `from pathlib import Path`                            | Build a robust filesystem path to `.env` next to *this* file (not the user's current working directory).                                     |
-| 21   | `from dotenv import load_dotenv`                      | Read a `.env` file and inject its key=value pairs into `os.environ`. VS Code's Python extension does this automatically too, but `python-dotenv` makes the script work the same way from any terminal. |
-| 23   | `from agent_framework import ChatAgent`               | `ChatAgent` is the Agent Framework's high-level abstraction over "an LLM with instructions and (optionally) tools". This is the *agent*.    |
-| 24   | `from agent_framework_azure_ai import AzureAIAgentClient` | The transport. This is the bit that turns method calls into HTTPS requests against your Foundry project's **Azure AI Agents** endpoint. |
-| 25   | `from azure.identity.aio import DefaultAzureCredential` | Azure Identity's async credential chain. It tries (in order) environment variables, managed identity, Azure CLI, and a few others until one returns a token. |
-| 27   | `load_dotenv(Path(__file__).resolve().parent / ".env")` | Load `.env` from **the same folder as this `.py` file**, no matter where you ran Python from. This is the line that makes `cd anywhere; python /full/path/to/01-basic-agent.py` still work. |
+| Import                                                | Purpose                                                                                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `asyncio`                                             | The Agent Framework is async-first. We use `asyncio.run(main())` at the bottom of the file to launch the event loop.                        |
+| `os`                                                  | Read configuration from environment variables.                                                                                              |
+| `from pathlib import Path`                            | Build a robust filesystem path to `.env` next to *this* file (not the user's current working directory).                                     |
+| `from dotenv import load_dotenv`                      | Read a `.env` file and inject its key=value pairs into `os.environ`. The Agent Framework does not auto-load `.env`, so this call is required when you want one.|
+| `from agent_framework import Agent`                   | `Agent` is the Agent Framework's high-level abstraction over "an LLM with instructions and (optionally) tools". This is the *agent*.        |
+| `from agent_framework_foundry import FoundryChatClient` | The transport. This turns method calls into HTTPS requests against your Foundry project endpoint. |
+| `from azure.identity import AzureCliCredential`       | Reuses your `az login` session to mint Entra ID access tokens. No secrets in source. |
+| `load_dotenv(Path(__file__).resolve().parent / ".env")` | Load `.env` from **the same folder as this `.py` file**, no matter where you ran Python from. This is the line that makes `cd anywhere; python /full/path/to/01-basic-agent.py` still work. |
 
-> **Deep dive · Why two import packages for "the framework"?** The Agent
+> **Deep dive, why two import packages for "the framework"?** The Agent
 > Framework is built in *layers*. `agent_framework` is the **core** package
-> (provider-agnostic abstractions like `ChatAgent`, `Agent`, `HostedMCPTool`).
-> `agent_framework_azure_ai` is one of several **provider packages**
-> (Azure AI Foundry, OpenAI, Anthropic, Ollama, …). Swapping providers is a
-> one-line change at the client level — the `ChatAgent` above doesn't move.
+> (provider-agnostic abstractions like `Agent`, `BaseAgent`, `FunctionTool`).
+> `agent_framework_foundry` is one of several **provider packages**
+> (Microsoft Foundry, OpenAI, Anthropic, Ollama, and more). Swapping providers is a
+> one-line change at the client level, the `Agent` above doesn't move.
 
-### Section 2 · Configuration constants and fail-fast check (lines 29–46)
+### Section 2, Configuration constants and fail-fast check
 
 ```python
 ENDPOINT = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
@@ -206,151 +199,95 @@ USER_INPUTS = [
 | `AGENT_INSTRUCTIONS`        | The **system prompt** — the only piece of writing you control that the model always sees. Spend time on it in production.                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `USER_INPUTS`               | A list of prompts to send sequentially. We use a list (not a single string) to make the loop further down trivially extensible — try adding a second prompt to see what happens.                                                                                                                                                                                                                                                                                                                                          |
 
-> **Deep dive · The fail-fast check.** If `FOUNDRY_PROJECT_ENDPOINT` is
-> unset *or* still contains the placeholder string `<YOUR_`, we raise a
+> **Deep dive, the fail-fast check.** When `FOUNDRY_PROJECT_ENDPOINT` is
+> unset or still contains the placeholder string `<YOUR_`, we raise a
 > `RuntimeError` **before** opening any HTTP connection. This turns a
 > confusing 404 into a one-line error that points you straight at the fix.
-> The pattern is repeated in samples 03 and 04 — and is worth copying into
+> The pattern is repeated in samples 03 and 04, and is worth copying into
 > any production script that depends on env vars.
 
-### Section 3 · The `main()` coroutine
+### Section 3, The `main()` coroutine
 
 This is where the actual work happens. Let's break it into three logical parts.
 
-#### Part 3a — Open two async context managers at once (lines 29–43)
+#### Part 3a, Build the client and agent
 
 ```python
 async def main() -> None:
-    async with (
-        DefaultAzureCredential() as credential,
-        ChatAgent(
-            chat_client=AzureAIAgentClient(
-                project_endpoint=ENDPOINT,
-                model_deployment_name=MODEL_DEPLOYMENT_NAME,
-                async_credential=credential,
-                agent_name=AGENT_NAME,
-                agent_id=None,
-            ),
-            instructions=AGENT_INSTRUCTIONS,
-            max_tokens=4096,
-            tools=None,
-        ) as agent
-    ):
+    client = FoundryChatClient(
+        project_endpoint=ENDPOINT,
+        model=MODEL_DEPLOYMENT_NAME,
+        credential=AzureCliCredential(),
+    )
+
+    agent = Agent(
+        client=client,
+        name=AGENT_NAME,
+        instructions=AGENT_INSTRUCTIONS,
+    )
 ```
 
-This single `async with` statement is doing **a lot**. Read it carefully:
+Three objects, three responsibilities:
 
-1. **`DefaultAzureCredential() as credential`** — opens a credential object
-   and binds it to the name `credential`. Behind the scenes, the credential
-   has *not* yet acquired a token; it will lazily do so the first time the
-   client asks for one. The `async with` ensures it gets closed at the end
-   (releases caches, HTTP connections, etc.).
+1. **`AzureCliCredential()`** mints Entra ID access tokens from your `az login` session. The token is fetched lazily on the first request.
+2. **`FoundryChatClient(...)`** is the HTTP transport. The interesting kwargs:
 
-2. **`AzureAIAgentClient(...)`** — constructed inline. This is your HTTP
-   transport. The interesting kwargs:
+   | kwarg                | Meaning                                                                                                  |
+   | -------------------- | -------------------------------------------------------------------------------------------------------- |
+   | `project_endpoint`   | Where to send requests. Also readable from `FOUNDRY_PROJECT_ENDPOINT`.                                   |
+   | `model`              | The deployment name in your project. Also readable from `FOUNDRY_MODEL`.                                 |
+   | `credential`         | The credential used to mint tokens for every HTTP request that needs auth.                               |
 
-   | kwarg                     | Meaning                                                                                                                                                                                                                            |
-   | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | `project_endpoint`        | Where to send requests.                                                                                                                                                                                                            |
-   | `model_deployment_name`   | Which deployment in the project to use as the LLM brain.                                                                                                                                                                           |
-   | `async_credential`        | The credential we just opened. The client will call `credential.get_token(...)` on every HTTP request that needs auth.                                                                                                              |
-   | `agent_name`              | Cosmetic label.                                                                                                                                                                                                                    |
-   | `agent_id=None`           | **Key detail.** When `agent_id` is `None`, the client creates a *temporary* agent on the server side at the start of the run and **deletes it again when the context manager exits**. This is why you don't see leftover agents accumulating in the portal after each run. To re-use an existing portal-defined agent, you'd pass its ID here (that's sample 02b). |
+3. **`Agent(...)`** wraps the client. The agent is constructed *with* `client=...` rather than inheriting from the client. The Agent Framework uses composition, not inheritance: any class implementing the `ChatClient` protocol can power any `Agent`. We do not pass `tools=` here, so the agent can only talk. Tools come in samples 02 and 03.
 
-3. **`ChatAgent(...)`** — wraps the client. Notice the agent is constructed
-   *with* `chat_client=...` rather than inheriting from the client. The Agent
-   Framework uses composition, not inheritance: any class implementing the
-   `ChatClient` protocol can power any `ChatAgent`.
-
-4. **`tools=None`** — explicit "this agent has no tools". The model can only
-   *talk*; it cannot do anything. We'll add tools in samples 02 and 03.
-
-5. The whole thing is bound to `agent` (the `as agent` at the end).
-
-> **Deep dive · Why a context manager?** Both the credential and the agent
-> own external resources — HTTP connection pools, possibly a server-side
-> agent. Using `async with` guarantees Python runs `__aexit__` on both even
-> if an exception is raised inside the block. **This is the recommended
-> pattern for every Foundry agent you write.** Hand-managing `.close()` is
-> a leak waiting to happen.
-
-#### Part 3b — Create a thread and send each prompt (lines 45–64)
+#### Part 3b, Create a session and send each prompt
 
 ```python
-        # Create a new thread that will be reused
-        thread = agent.get_new_thread()
+    session = agent.create_session()
 
-        # Process user messages
-        for user_input in USER_INPUTS:
-            print(f"\n# User: '{user_input}'")
-            async for chunk in agent.run_stream([user_input], thread=thread):
-                if chunk.text:
-                    print(chunk.text, end="")
-                elif (
-                    chunk.raw_representation
-                    and chunk.raw_representation.raw_representation
-                    and hasattr(chunk.raw_representation.raw_representation, "status")
-                    and hasattr(chunk.raw_representation.raw_representation, "type")
-                    and chunk.raw_representation.raw_representation.status == "completed"
-                    and hasattr(chunk.raw_representation.raw_representation, "step_details")
-                    and hasattr(chunk.raw_representation.raw_representation.step_details, "tool_calls")
-                ):
-                    print("")
-                    print("Tool calls: ", chunk.raw_representation.raw_representation.step_details.tool_calls)
-            print("")
+    for user_input in USER_INPUTS:
+        print(f"\n# User: '{user_input}'")
+        async for chunk in agent.run(user_input, session=session, stream=True):
+            if chunk.text:
+                print(chunk.text, end="", flush=True)
+        print("")
 ```
 
 There are **three concepts** worth pausing on here.
 
-**Concept 1 — Threads carry conversation memory.**
-`agent.get_new_thread()` asks the server to allocate a *thread*: a server-side
-container that stores every message in the conversation. We create it
-**outside** the `for` loop so all prompts go into the same conversation. If
-we created a fresh thread per prompt the model would forget prior turns —
-useful for stateless QA, but not what we want here.
+**Concept 1, Sessions carry conversation memory.**
+`agent.create_session()` allocates a *session*: a container that stores every
+message in the conversation. We create it **outside** the `for` loop so all
+prompts go into the same conversation. When you create a fresh session per
+prompt the model forgets prior turns, useful for stateless QA, but not what we
+want here.
 
-**Concept 2 — `run_stream(...)` returns an async iterator of *chunks*.**
+**Concept 2, `agent.run(..., stream=True)` returns an async iterator of *chunks*.**
 The model streams its response token-by-token. Each `chunk` is a small
-`AgentRunResponseUpdate` object. `chunk.text` holds the new text fragment
+`AgentResponseUpdate` object. `chunk.text` holds the new text fragment
 since the last chunk (often a single word or a fragment of one). We
-`print(chunk.text, end="")` so it appears incrementally — that's the
+`print(chunk.text, end="", flush=True)` so it appears incrementally, the
 familiar "typewriter" effect.
 
-**Concept 3 — The big `elif` is a tool-call detector** (forward-looking).
-This sample has no tools, so the `elif` branch never fires. But the same
-code is reused in sample 03 — when the model decides to call a tool, the
-Foundry server emits a special "step completed" chunk whose raw payload
-includes the list of `tool_calls`. The code probes deep into the raw
-representation defensively (lots of `hasattr` checks) because the shape of
-this object can vary across API versions. Keeping this branch in your
-own code is good practice — it costs nothing when there are no tools and
-gives you free tool-call visibility once you add them.
+**Concept 3, Streaming vs blocking.** Drop `stream=True` and call
+`result = await agent.run(user_input, session=session)` for the blocking
+version. You lose the typewriter effect but the code is dramatically
+simpler. **For interactive UIs prefer streaming**, first-token latency feels
+dramatically faster. For batch jobs the blocking call is fine.
 
-> **Deep dive · The streaming vs the blocking API.** The Agent Framework
-> offers two flavours of every call. `agent.run(prompt)` returns the full
-> response once the model has finished. `agent.run_stream(prompt)` returns
-> an async iterator that yields chunks as they arrive. **For interactive
-> UIs prefer streaming** — first-token latency feels dramatically faster.
-> For batch jobs the blocking API is simpler.
-
-#### Part 3c — Print a completion banner and let async cleanup settle (lines 66–69)
+#### Part 3c, Print a completion banner
 
 ```python
-        print("\n--- All tasks completed successfully ---")
-
-    # Give additional time for all async cleanup to complete
-    await asyncio.sleep(1.0)
+    print("\n--- All tasks completed successfully ---")
 ```
 
-When control leaves the `async with` block at line 43, Python calls
-`__aexit__` on the agent and the credential. That triggers an HTTP `DELETE`
-on the temporary agent, closes the connection pool, and flushes any
-in-flight telemetry. The one-second sleep on line 69 gives those background
-tasks time to finish before the process exits. It's a *belt-and-braces*
-move; in production you'd typically lean on whichever runtime (FastAPI,
-asyncio.Runner, …) you're embedded in.
+The `FoundryChatClient` and `AzureCliCredential` do not own per-run
+server-side resources, so there is no async context manager to close in this
+sample. When you start using hosted-agent sessions (sample 02b) or other
+features that allocate server-side state, you'll wrap the client in `async
+with` to guarantee teardown.
 
-### Section 4 · The entry-point guard
+### Section 4, The entry-point guard
 
 ```python
 if __name__ == "__main__":
@@ -395,13 +332,13 @@ have seen in older blog posts; those are deprecated.
    # OR on Windows:
    .venv\Scripts\activate
    pip install --upgrade pip
-   pip install agent-framework agent-framework-azure-ai python-dotenv --pre
+   pip install agent-framework agent-framework-foundry python-dotenv
    ```
 4. **Sign in to Azure:**
    ```bash
    az login
    ```
-   This populates the credential cache that `DefaultAzureCredential` reads.
+   This populates the credential cache that `AzureCliCredential` reads.
 5. **Confirm your `.env` is configured** (see [Step 1 of the Prerequisites](#step-1--configure-your-env-file)). The file lives in this folder and must have `FOUNDRY_PROJECT_ENDPOINT` filled in.
 6. **Run it:**
    ```bash
@@ -435,7 +372,7 @@ Program finished.
 ```
 
 The text after `# User:` will stream in incrementally — you'll see words
-appear one or two at a time, not all at once. That's `run_stream` doing its
+appear one or two at a time, not all at once. That's `stream=True` doing its
 job.
 
 ---
@@ -445,11 +382,11 @@ job.
 | Symptom                                                                                                       | Cause                                                                                                                      | Fix                                                                                                                                                                       |
 | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RuntimeError: FOUNDRY_PROJECT_ENDPOINT is not configured`                                                    | You haven't created `.env`, or `.env` still contains the `<YOUR_…>` placeholder.                                            | Follow [Step 1 of the Prerequisites](#step-1--configure-your-env-file): `cp .env.example .env` and fill in the two values.                                                  |
-| `azure.identity.exceptions.CredentialUnavailableError` or `DefaultAzureCredential failed to retrieve a token` | You haven't signed in to Azure CLI, or you're signed into the wrong tenant.                                                | Run `az login` (optionally `az login --tenant <YOUR_TENANT_ID>`). Verify with `az account show`.                                                                          |
+| `azure.identity.exceptions.CredentialUnavailableError` or `AzureCliCredential failed to retrieve a token` | You haven't signed in to Azure CLI, or you're signed into the wrong tenant.                                                | Run `az login` (optionally `az login --tenant <YOUR_TENANT_ID>`). Verify with `az account show`.                                                                          |
 | `ResourceNotFound` / `404` from the client                                                                    | `FOUNDRY_PROJECT_ENDPOINT` in `.env` is wrong (typo, wrong project, wrong resource).                                       | Open Foundry portal → **your project → Overview**, copy the endpoint URL, paste over the value in `.env`.                                                                  |
 | `DeploymentNotFound` / `404` for the model                                                                    | `FOUNDRY_MODEL` doesn't match any deployment in your project.                                                              | In the Foundry portal → **your project → Models + Endpoints**, copy the exact deployment name into `.env`.                                                                  |
 | Streamed output has no spaces or looks "wrong"                                                                | Some terminals buffer line-by-line. We use `print(..., end="")` which can interact with line buffering.                    | Set `PYTHONUNBUFFERED=1` before running, or pipe through `python -u 01-basic-agent.py`.                                                                                    |
-| `ModuleNotFoundError: agent_framework_azure_ai` *or* `ModuleNotFoundError: dotenv`                            | The pre-release wheels (or `python-dotenv`) weren't installed in the active venv.                                          | `pip install agent-framework agent-framework-azure-ai python-dotenv --pre`                                                                                                  |
+| `ModuleNotFoundError: agent_framework_foundry` *or* `ModuleNotFoundError: dotenv`                            | Required packages weren't installed in the active venv.                                              | `pip install agent-framework agent-framework-foundry python-dotenv`                                                                                                  |
 
 ---
 
@@ -457,20 +394,20 @@ job.
 
 1. **Change the personality.** Edit `AGENT_INSTRUCTIONS` to say *"You are a
    pirate who answers in nautical slang."* Re-run. The same model, the same
-   prompt, but a completely different style — your first hands-on lesson in
+   prompt, but a completely different style, your first hands-on lesson in
    how powerful the system prompt is.
 2. **Add a second prompt to `USER_INPUTS`** that depends on the first
    (e.g., *"And what about the Moon?"*). Run it. Observe that the model
-   answers correctly because both prompts share the same `thread` and it
+   answers correctly because both prompts share the same `session` and it
    has the prior turn in context.
-3. **Recreate the thread inside the `for` loop** by moving `thread =
-   agent.get_new_thread()` *into* the loop. Re-run with the follow-up
+3. **Recreate the session inside the `for` loop** by moving `session =
+   agent.create_session()` *into* the loop. Re-run with the follow-up
    question above and see that the model *no longer knows what you're
-   referring to*. That's the practical importance of threads in three lines
+   referring to*. That's the practical importance of sessions in three lines
    of code.
-4. **Switch from `run_stream` to `run`.** Replace the `async for chunk …`
-   block with `result = await agent.run(user_input); print(result)`. You'll
-   lose the typewriter effect but the code is dramatically simpler — and it
+4. **Switch from streaming to blocking.** Replace the `async for chunk …`
+   block with `result = await agent.run(user_input, session=session); print(result)`. You'll
+   lose the typewriter effect but the code is dramatically simpler, and it
    still works.
 
 ---
@@ -478,9 +415,9 @@ job.
 ## What you've learned
 
 You can now describe a Foundry agent in four words: **credential, client,
-agent, thread**. You've signed in to Azure without putting a secret in
-your code. You've streamed tokens from gpt-4o. You've seen the lifecycle
-pattern (`async with`) that every Foundry sample in this workshop uses.
+agent, session**. You've signed in to Azure without putting a secret in
+your code. You've streamed tokens from gpt-4o. You've seen the basic
+pattern that every Foundry sample in this workshop uses.
 
 Everything from here on is *additive*: tools (samples 02 and 03), tracing
 (sample 04), per-agent identity and downstream API auth (sample 05), and

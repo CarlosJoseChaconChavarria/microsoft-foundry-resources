@@ -28,6 +28,14 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
 
 SUB = os.environ.get("APPLICATIONINSIGHTS_SUBSCRIPTION_ID")
 RG = os.environ.get("APPLICATIONINSIGHTS_RESOURCE_GROUP")

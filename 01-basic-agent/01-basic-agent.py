@@ -5,7 +5,7 @@ Run this script
 > python -m venv .venv
 > source .venv/bin/activate            # macOS / Linux
 > .venv\\Scripts\\activate              # Windows
-> pip install agent-framework agent-framework-azure-ai python-dotenv --pre
+> pip install agent-framework agent-framework-foundry python-dotenv
 > cp .env.example .env                 # then edit .env and fill in your values
 > az login
 > python 01-basic-agent.py
@@ -17,9 +17,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from agent_framework import ChatAgent
-from agent_framework_azure_ai import AzureAIAgentClient
-from azure.identity.aio import DefaultAzureCredential
+from agent_framework import Agent
+from agent_framework_foundry import FoundryChatClient
+from azure.identity import AzureCliCredential
 
 # Load .env from this file's folder so both `python 01-basic-agent.py` and
 # VS Code's ▶ Run button pick up the same configuration.
@@ -46,47 +46,35 @@ USER_INPUTS = [
 
 
 async def main() -> None:
-    async with (
-        DefaultAzureCredential() as credential,
-        ChatAgent(
-            chat_client=AzureAIAgentClient(
-                project_endpoint=ENDPOINT,
-                model_deployment_name=MODEL_DEPLOYMENT_NAME,
-                async_credential=credential,
-                agent_name=AGENT_NAME,
-                agent_id=None,  # Since no Agent ID is provided, the agent will be automatically created and deleted after getting response
-            ),
-            instructions=AGENT_INSTRUCTIONS,
-            max_tokens=4096,
-            tools=None,
-        ) as agent
-    ):
-        # Create a new thread that will be reused
-        thread = agent.get_new_thread()
+    # The Foundry chat client owns the HTTPS transport to your project.
+    # FoundryChatClient also reads FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_MODEL
+    # from the environment automatically; we pass them explicitly here so the
+    # fail-fast check above runs first.
+    client = FoundryChatClient(
+        project_endpoint=ENDPOINT,
+        model=MODEL_DEPLOYMENT_NAME,
+        credential=AzureCliCredential(),
+    )
 
-        # Process user messages
-        for user_input in USER_INPUTS:
-            print(f"\n# User: '{user_input}'")
-            async for chunk in agent.run_stream([user_input], thread=thread):
-                if chunk.text:
-                    print(chunk.text, end="")
-                elif (
-                    chunk.raw_representation
-                    and chunk.raw_representation.raw_representation
-                    and hasattr(chunk.raw_representation.raw_representation, "status")
-                    and hasattr(chunk.raw_representation.raw_representation, "type")
-                    and chunk.raw_representation.raw_representation.status == "completed"
-                    and hasattr(chunk.raw_representation.raw_representation, "step_details")
-                    and hasattr(chunk.raw_representation.raw_representation.step_details, "tool_calls")
-                ):
-                    print("")
-                    print("Tool calls: ", chunk.raw_representation.raw_representation.step_details.tool_calls)
-            print("")
-        
-        print("\n--- All tasks completed successfully ---")
+    agent = Agent(
+        client=client,
+        name=AGENT_NAME,
+        instructions=AGENT_INSTRUCTIONS,
+    )
 
-    # Give additional time for all async cleanup to complete
-    await asyncio.sleep(1.0)
+    # A session carries conversation history across multiple .run() calls so
+    # the model can answer follow-ups in context.
+    session = agent.create_session()
+
+    for user_input in USER_INPUTS:
+        print(f"\n# User: '{user_input}'")
+        async for chunk in agent.run(user_input, session=session, stream=True):
+            if chunk.text:
+                print(chunk.text, end="", flush=True)
+        print("")
+
+    print("\n--- All tasks completed successfully ---")
+
 
 if __name__ == "__main__":
     try:
