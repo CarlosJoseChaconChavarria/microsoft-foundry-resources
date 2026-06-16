@@ -16,6 +16,7 @@
 ## Table of contents
 
 - [What you will learn](#what-you-will-learn)
+- [Exam AI-300 mapping](#exam-ai-300-mapping)
 - [Prerequisites](#prerequisites)
 - [The mental model](#the-mental-model)
 - [Step-by-step code walkthrough](#step-by-step-code-walkthrough)
@@ -38,6 +39,29 @@ By the end of this lab you will be able to:
    without ever embedding a secret in your source.
 3. **Send a prompt and stream a response** from a Foundry-hosted gpt-4o
    model.
+
+---
+
+## Exam AI-300 mapping
+
+This lab gives you hands-on practice with objectives from **two** of the five
+skill areas measured in
+[Exam AI-300: Operationalizing Machine Learning and Generative AI Solutions](https://learn.microsoft.com/credentials/certifications/resources/study-guides/ai-300).
+
+| AI-300 skill area | Specific objective | What you do in this lab |
+|---|---|---|
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Create and configure Foundry resources and project environments* | You connect to a live Foundry project via `FOUNDRY_PROJECT_ENDPOINT` and exercise the four building blocks (credential → client → agent → session) that every Foundry-hosted agent is built from. |
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Configure identity and access management with managed identities and RBAC* | You authenticate with `AzureCliCredential` — the local equivalent of a managed identity. No API keys or connection strings touch the code. This is the same pattern the exam tests for production workloads that use system-assigned or user-assigned managed identities. |
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Deploy foundation models by using serverless API endpoints* | The gpt-4o model is consumed through the Foundry agents API, a serverless endpoint. The lab shows exactly which constructor argument maps the client to that endpoint. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Configure detailed logging, tracing, and debugging capabilities* | Streaming responses (`stream=True`) is the first step toward observability. Lab 04 extends this with Application Insights tracing built on top of the same `agent.run(...)` call you write here. |
+
+> **Exam tip.** AI-300 tests you on *when* to use each auth method and
+> *what resource type* backs a Foundry project. After this lab you should
+> be able to explain: (1) why `AzureCliCredential` is the dev-time proxy
+> for a managed identity, and (2) that a Foundry project is a
+> `Microsoft.CognitiveServices/accounts/projects` child resource (not an
+> Azure ML workspace) — the distinction the exam uses to test infrastructure
+> knowledge.
 
 ---
 
