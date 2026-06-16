@@ -21,6 +21,7 @@ AI-300 skills covered
 # ── Standard library ─────────────────────────────────────────────────────────
 import asyncio          # Agent Framework is async-first; asyncio.run() launches the loop.
 import os               # Read FOUNDRY_* variables that load_dotenv injects into the env.
+import sys              # sys.stdout.write for the spinner (avoids print's newline).
 from pathlib import Path  # Build a path to .env relative to *this file*, not the cwd.
 
 # ── Third-party ──────────────────────────────────────────────────────────────
@@ -63,6 +64,23 @@ if not ENDPOINT or "<YOUR_" in ENDPOINT:
         "Copy .env.example to .env in this folder and fill in your Foundry "
         "project endpoint. See README.md → Prerequisites."
     )
+
+async def _thinking_spinner(stop: asyncio.Event) -> None:
+    """Animate a spinner until stop is set, then erase it.
+
+    Runs as a background task while waiting for the model's first token.
+    The perceived wait feels shorter because something is visibly happening.
+    """
+    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    i = 0
+    while not stop.is_set():
+        sys.stdout.write(f"\r  {frames[i % len(frames)]} thinking...")
+        sys.stdout.flush()
+        i += 1
+        await asyncio.sleep(0.1)
+    sys.stdout.write("\r" + " " * 20 + "\r")   # erase the spinner line
+    sys.stdout.flush()
+
 
 AGENT_NAME = "ai-agent"
 AGENT_INSTRUCTIONS = "You are a helpful AI assistant."  # System prompt — what the model always sees.
@@ -107,12 +125,23 @@ async def main() -> None:
     for user_input in USER_INPUTS:
         print(f"\n# User: '{user_input}'")
 
-        # stream=True → agent.run() returns an async iterator of incremental chunks.
-        # Each chunk.text is a small text fragment (often a single word).
-        # This is the "typewriter" effect; drop stream=True for a blocking single result.
+        # Show a spinner while waiting for the model's first token, then erase it.
+        # asyncio.Event lets the spinner task know the moment a chunk arrives.
+        stop_spinner = asyncio.Event()
+        spinner = asyncio.create_task(_thinking_spinner(stop_spinner))
+
+        first_chunk = True
         async for chunk in agent.run(user_input, session=session, stream=True):
             if chunk.text:
+                if first_chunk:
+                    stop_spinner.set()      # signal the spinner to stop
+                    await spinner           # wait for it to erase itself
+                    first_chunk = False
                 print(chunk.text, end="", flush=True)
+
+        if first_chunk:                     # model returned nothing — still stop spinner
+            stop_spinner.set()
+            await spinner
         print("")
 
     print("\n--- All tasks completed successfully ---")
