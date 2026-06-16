@@ -1,0 +1,11 @@
+name: foundry-workshop
+metadata:
+  template: foundry-workshop@0.0.1
+
+hooks:
+  postprovision:
+    posix:
+      shell: sh
+      run: scripts/postprovision.sh
+      interactive: false
+      continueOnError: false
