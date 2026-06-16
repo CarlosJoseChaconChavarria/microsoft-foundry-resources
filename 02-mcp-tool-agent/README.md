@@ -58,6 +58,23 @@ By the end of this lab you will be able to:
 
 ---
 
+## Exam AI-300 mapping
+
+This lab covers objectives across two AI-300 skill areas.
+
+[Exam AI-300: Operationalizing Machine Learning and Generative AI Solutions](https://learn.microsoft.com/credentials/certifications/resources/study-guides/ai-300)
+
+| AI-300 skill area | Specific objective | What you do in this lab |
+|---|---|---|
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Create and configure Foundry resources and project environments* | You build the same MCP-powered agent three ways — pure code, portal-first, and hybrid/GitOps — letting you compare infra approaches and understand when each fits. |
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Implement prompt versioning and management with source control* | Variant C (hybrid/GitOps) stores tool configuration in Git and syncs it to a portal-hosted agent — the exam's source-control-for-prompts objective in practice. |
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Deploy foundation models by using serverless API endpoints* | gpt-4o is consumed through the Foundry agents API; the MCP tool call is an additional serverless HTTP hop managed by the framework. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Configure detailed logging, tracing, and debugging capabilities* | `_observability.py` wires Application Insights via OpenTelemetry — the same pipeline lab 04 teaches in detail. Seeing it here first makes lab 04 less abstract. |
+
+> **Exam tip.** AI-300 asks you to choose between code-defined, portal-defined, and GitOps agent configurations. The deciding factor is team maturity and change-frequency: GitOps wins when the system prompt or tool list changes frequently and must be version-controlled; portal-first wins for rapid prototyping; pure-code wins when the agent definition is part of a CI/CD pipeline.
+
+---
+
 ## Prerequisites
 
 | Requirement                                                          | Why                                                                                                                                                |
@@ -172,22 +189,22 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Load .env from the same folder as this script *before* any os.environ.get()
+# calls below, so module-level config reads see the file contents.
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
+# Top-level agent class — same building block you used in sample 01.
 from agent_framework import Agent
+# Foundry-specific chat client (package: agent-framework-foundry).
+# This is the path that unlocks get_mcp_tool().
 from agent_framework.foundry import FoundryChatClient
+# Synchronous CLI credential — removes the need for an async with ceremony
+# on the credential object itself.
 from azure.identity import AzureCliCredential
 
+# Shared observability module (see the dedicated section further down).
 from _observability import init_observability
 ```
-
-| Import | What it does |
-| ------ | ------------ |
-| `from agent_framework import Agent` | The current top-level agent class. Same building block you used in sample 01. |
-| `from agent_framework.foundry import FoundryChatClient` | Foundry-specific chat client. It is the path that unlocks `get_mcp_tool()`. The package on PyPI is `agent-framework-foundry`. |
-| `from azure.identity import AzureCliCredential` | Synchronous CLI credential. The sync version removes the need for `async with` ceremony on the credential. |
-| `from _observability import init_observability` | The shared observability module. See [its dedicated section below](#observability--_observabilitypy-explained). |
-| `load_dotenv(...)` | Reads `.env` from the same folder as the script. Done before importing `PROJECT_ENDPOINT` so module-level `os.environ.get` calls see the file contents. |
 
 > **Why `agent-framework-foundry` is a separate package.** The core
 > `agent-framework` package only contains provider-agnostic primitives
@@ -247,19 +264,22 @@ manager on line 57.)
 
 ```python
     mcp_tool = client.get_mcp_tool(
+        # Cosmetic label shown in traces and the portal's tool view.
+        # Avoid spaces — some server-side parsers reject them.
         name="MicrosoftLearn",
+        # The MCP endpoint. Microsoft Learn is public and read-only so no
+        # auth header is needed. Your own MCP servers (e.g. sample 06's
+        # get_weather) will require an Authorization header — see lab 06.
         url="https://learn.microsoft.com/api/mcp",
+        # Controls human-in-the-loop approval. Three values:
+        #   "never_require"  — auto-approve every call (safe for read-only tools).
+        #   "always_require" — pause for explicit approval (use for write/cost ops).
+        #   dict             — per-tool granularity, e.g. {"search": "never_require"}.
         approval_mode="never_require",
     )
 ```
 
-This is the heart of the sample. Three arguments:
-
-| Argument | What it does |
-| -------- | ------------ |
-| `name` | Cosmetic label that appears in traces and the portal's tool view. Avoid spaces in the label, since some server-side parsers reject them. |
-| `url` | The MCP endpoint. No authentication is needed for the Microsoft Learn MCP, because it is a public read-only service. Your own MCP servers (like sample 06's `get_weather`) will require an Authorization header. That is covered in sample 06's lab. |
-| `approval_mode` | The most important argument. Three values: `"never_require"` auto-approves every tool call (safe for read-only public tools like Microsoft Learn search), `"always_require"` pauses every tool call for explicit human approval (use for any tool that writes or costs money), or a `dict` mapping tool name to mode for per-tool granularity. |
+This is the heart of the sample.
 
 > **Deep dive on tool security.** The single most important question for
 > tools is: "what happens if the model calls this with bad arguments?" Use

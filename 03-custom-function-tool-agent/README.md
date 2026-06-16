@@ -49,6 +49,22 @@ By the end of this lab you will be able to:
 
 ---
 
+## Exam AI-300 mapping
+
+This lab covers objectives across two AI-300 skill areas.
+
+[Exam AI-300: Operationalizing Machine Learning and Generative AI Solutions](https://learn.microsoft.com/credentials/certifications/resources/study-guides/ai-300)
+
+| AI-300 skill area | Specific objective | What you do in this lab |
+|---|---|---|
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Create and configure Foundry resources and project environments* | You wire a Python function as an agent tool with one `tools=[get_time]` entry and work through the local-function vs MCP trade-off — a design decision AI-300 tests under "select appropriate deployment patterns". |
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Deploy foundation models by using serverless API endpoints* | gpt-4o calls `get_time()` through the Foundry agents API. You observe the full tool-call cycle: model decision → framework execution → result injection → final answer. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Configure detailed logging, tracing, and debugging capabilities* | The streaming loop exposes `function_call` and `function_result` chunk types — the raw events that OpenTelemetry spans (lab 04) are built from. Seeing them here makes lab 04's traces interpretable. |
+
+> **Exam tip.** AI-300 may present a scenario where you must choose between a local function tool and an MCP server. The key discriminator: "does a second agent or team need the same capability?" If yes → MCP server. If the tool is internal to one agent's process and will never be reused → local function. The exam also tests that you know the docstring is the tool's contract with the model — a missing or vague docstring means the model will not call the tool.
+
+---
+
 ## Prerequisites
 
 | Requirement                                                       | Why                                                                                                           |
@@ -163,25 +179,26 @@ side-by-side with this guide.
 ```python
 import asyncio
 import os
+# Used by get_time() — local function tools can use any Python library you
+# can pip install; there is no restriction to framework-provided primitives.
 from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Load .env from this folder into os.environ *before* the framework imports,
+# so any module-level os.environ.get() calls see the file's values.
+# Same pattern as samples 01 and 02.
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
+# Same Agent class as samples 01 and 02.
 from agent_framework import Agent
+# Foundry transport — lives in the separate agent-framework-foundry package.
 from agent_framework.foundry import FoundryChatClient
+# Sync credential that reads your `az login` token.
+# Matches the sync Agent constructor used in this script.
 from azure.identity import AzureCliCredential
 ```
-
-| Import                                              | Purpose                                                                                                                                                                                |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `asyncio`, `os`, `Path`, `load_dotenv`              | Read the `.env` file in this folder into `os.environ` so the rest of the script can `os.environ.get(...)`. Same pattern as sample 01.                                                  |
-| `Agent`                                             | Same class as samples 01 and 02.                                                                                                                                                       |
-| `FoundryChatClient`                                 | The Foundry transport, lives in the separate `agent-framework-foundry` package.                                                                                                        |
-| `AzureCliCredential`                                | Sync credential that reads your `az login` token. Matches the sync `Agent` constructor in this script.                                                                                 |
-| `from datetime import datetime, timezone`           | Used by our tool function. This is the entire reason `get_time()` works, and a reminder that local function tools can use any Python library you can `pip install`.                    |
 
 > **Note.** `load_dotenv` is called **before** the framework imports so that
 > any framework-level config that reads environment variables at import time
@@ -233,21 +250,18 @@ Three things worth pointing out:
 ### Section 3 · The function tool
 
 ```python
+# The function signature is the tool's *contract* with the model.
+# It takes no arguments and returns a string — the model sees this exact shape.
 def get_time() -> str:
+    # The docstring IS the tool's description sent to the model.
+    # Be specific: "Get the current UTC time" vs "Get the time" are
+    # very different signals. A vague docstring = the model never calls it.
     """Get the current UTC time."""
+    # The body is pure Python logic — the model never sees this.
+    # You can change the implementation freely without touching the tool spec.
     current_time = datetime.now(timezone.utc)
     return f"The current UTC time is {current_time.strftime('%Y-%m-%d %H:%M:%S')}."
 ```
-
-Four lines that do **three jobs**:
-
-1. **`def get_time() -> str:`** is the tool's *contract*: it takes no
-   arguments and returns a string. The model sees this exact shape.
-2. **`"""Get the current UTC time."""`** is the tool's *description* to the
-   model. Be specific. "Get the time" vs "Get the current UTC time" are
-   very different signals.
-3. **Body** is the actual logic. The model never sees this. You can change the
-   implementation freely without re-introducing the tool.
 
 > **Deep dive · Async vs sync tool functions.** This one is sync. The Agent
 > Framework accepts both. Wrap blocking I/O in `async def` if you want to
@@ -258,6 +272,7 @@ Four lines that do **three jobs**:
 
 ```python
 async def main() -> None:
+    # Standard Foundry client — same as samples 01 and 02.
     client = FoundryChatClient(
         model=MODEL,
         project_endpoint=ENDPOINT,
@@ -268,13 +283,13 @@ async def main() -> None:
         client=client,
         name=AGENT_NAME,
         instructions=AGENT_INSTRUCTIONS,
+        # Pass a *reference* to the function — not a call.
+        # That single entry is the entire mechanic for registering a local
+        # Python function as an agent tool. The framework inspects the
+        # signature, type hints, and docstring at startup.
         tools=[get_time],
     ) as agent:
 ```
-
-Same pattern as sample 01, but **`tools=[get_time]`**. That's the entire
-mechanic for adding a Python function as a tool. Put a reference to it in
-the `tools` list.
 
 You can mix and match:
 
@@ -294,19 +309,30 @@ menu.
             print(f"\n# User: '{user_input}'")
             print(f"# {AGENT_NAME}: ", end="", flush=True)
 
+            # stream=True returns an async iterator of AgentResponseUpdate objects.
             async for chunk in await agent.run(user_input, stream=True):
+                # Each chunk's .contents list holds one or more typed Content objects.
                 for content in chunk.contents:
+                    # to_dict() yields a plain dict with a stable "type" discriminator.
                     data = content.to_dict()
                     ctype = data.get("type")
 
+                    # "text" — the model is streaming its natural-language answer;
+                    # print inline (no newline) so tokens flow together.
                     if ctype == "text" and data.get("text"):
                         print(data["text"], end="", flush=True)
+                    # "function_call" — the model has decided to invoke a tool;
+                    # carries the function name and JSON arguments.
+                    # Prints: [tool call] get_time({})
                     elif ctype == "function_call":
                         print(
                             f"\n[tool call] {data.get('name')}"
                             f"({data.get('arguments', '{}')})",
                             flush=True,
                         )
+                    # "function_result" — the framework executed the function and
+                    # is feeding the return value back to the model.
+                    # Prints: [tool result] The current UTC time is ...
                     elif ctype == "function_result":
                         print(
                             f"[tool result] {data.get('result')}\n# {AGENT_NAME}: ",
@@ -318,14 +344,9 @@ menu.
 
 Each streaming chunk is an `AgentResponseUpdate` whose `.contents` list
 carries one or more typed `Content` objects. Calling `.to_dict()` gives you
-a plain dict with a stable `type` discriminator. We branch on three of
-those types:
-
-| Content `type`      | When it appears                                                | What we print                              |
-| ------------------- | -------------------------------------------------------------- | ------------------------------------------ |
-| `text`              | The model is streaming its natural-language answer.            | The token, inline, no newline.             |
-| `function_call`     | The model has decided to call a tool. Name and JSON args.      | `[tool call] get_time({})`                 |
-| `function_result`   | The framework has run the function and is returning its value. | `[tool result] The current UTC time is ...` |
+a plain dict with a stable `type` discriminator. The three types above cover
+the full local-function-tool cycle: the model's decision to call, the
+framework's execution, and the model's final text answer.
 
 Walk through what happens on a single user prompt:
 

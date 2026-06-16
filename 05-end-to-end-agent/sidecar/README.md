@@ -59,6 +59,18 @@ Provisioning is covered in the multi-cloud companion repo [`razi-rais/3P-Agent-I
 - How the downstream API validates agent tokens cryptographically — signature, issuer, `xms_par_app_azp`, audience.
 - How to swap from `ClientSecret` (dev) to `SignedAssertionFromManagedIdentity` (Azure deployments) without changing a line of agent code.
 
+## Exam AI-300 mapping
+
+[Exam AI-300: Operationalizing Machine Learning and Generative AI Solutions](https://learn.microsoft.com/credentials/certifications/resources/study-guides/ai-300)
+
+| AI-300 skill area | Specific objective | What you do in this lab |
+|---|---|---|
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Configure identity and access management with managed identities and RBAC* | Each AI agent gets its own Entra Agent Identity (separate from the application service principal) — the per-agent RBAC model AI-300 tests under identity management for GenAIOps. |
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Implement network security and private networking configurations* | The sidecar exposes no host port — only pod-local traffic can request tokens. This is the network isolation pattern the exam tests under private networking. |
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Create and configure Foundry resources and project environments* | The Foundry variant wires the sidecar alongside a Foundry-hosted agent — showing how managed identity token acquisition composes with the `services.ai.azure.com` project endpoint. |
+
+> **Exam tip.** AI-300 tests the difference between these credential sources: `AzureCliCredential` (dev laptop), `ManagedIdentityCredential` (Azure-hosted, no credential in code), and the Entra Agent ID sidecar (per-agent identity with OBO flows). Know *when* to use each: dev → CLI credential, production single-agent → managed identity, production multi-agent with auditability per agent → Entra Agent ID.
+
 ## Next steps
 
 | To... | Go to |

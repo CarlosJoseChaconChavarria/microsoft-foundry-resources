@@ -18,6 +18,23 @@
 
 ---
 
+## Exam AI-300 mapping
+
+This lab is the most infrastructure-heavy in the workshop, covering IaC deployment, identity hardening, and end-to-end observability.
+
+[Exam AI-300: Operationalizing Machine Learning and Generative AI Solutions](https://learn.microsoft.com/credentials/certifications/resources/study-guides/ai-300)
+
+| AI-300 skill area | Specific objective | What you do in this lab |
+|---|---|---|
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Deploy infrastructure using Bicep templates and Azure CLI* | You deploy a custom MCP server to Azure Functions using Bicep — end-to-end IaC for an agent tool, the same pattern AI-300 tests for GenAIOps infra deployments. |
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Configure identity and access management with managed identities and RBAC* | Iteration 2 adds Entra Easy Auth (app roles) to the Function App — replacing a function key with a proper identity-gated authorization model for the MCP tool endpoint. |
+| **Design and implement a GenAIOps infrastructure (20–25%)** | *Deploy and manage foundation models for production workloads* | The Foundry agent discovers and calls the weather MCP tool without per-tool client code — the production pattern for keeping model deployment and tool deployment independently versioned and scaled. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Configure detailed logging, tracing, and debugging capabilities* | The KQL cookbook (`kql/observability-cookbook.md`) stitches agent-side and server-side OpenTelemetry spans together — end-to-end distributed tracing across two independently deployed services. |
+
+> **Exam tip.** AI-300 tests you on securing tool endpoints for production agents. Know the two-step pattern: Iteration 1 (function key) is acceptable for dev, Iteration 2 (Entra Easy Auth + app roles) is required for production. The exam will present scenarios asking you to identify which auth model is appropriate — function key is *not* an acceptable answer for "production" or "enterprise" in the question stem.
+
+---
+
 ## Table of contents
 
 - [Part 0 · Set up VS Code (recommended)](#part-0--set-up-vs-code-recommended)
@@ -353,20 +370,17 @@ Functions hosts a handful of utility endpoints alongside it.
 `function_app.py`, the decorator pair
 
 ```python
-@app.mcp_tool()
+@app.mcp_tool()                         # (1) registers get_weather in tools/list with its JSON schema
 @app.mcp_tool_property(arg_name="location",
                        description="City name, region, or ZIP/postal code.",
-                       is_required=True)
+                       is_required=True)  # (2) annotates the schema: type hint → JSON type, decorator → description/required
 def get_weather(location: str) -> str: ...
+# (3) the extension handles JSON-RPC envelope, session id, SSE framing, and
+#     protocol-version negotiation automatically — none of that boilerplate
+#     appears in your code; tools/call for this name routes here at runtime
 ```
 
-is enough to make the Functions MCP extension:
-
-1. **Register `get_weather`** so it shows up in `tools/list` with its
-   description and JSON schema (derived from type hints + decorator args).
-2. **Route `tools/call`** invocations for that name into the Python function.
-3. **Handle JSON-RPC envelope, session id, SSE framing, and protocol version
-   negotiation** — none of that boilerplate is in your code.
+is enough to make the Functions MCP extension register the tool, route calls, and handle all protocol framing automatically.
 
 To add `get_forecast`, write another `@app.mcp_tool()` function in the same
 file. It appears in `tools/list` immediately; Foundry picks it up the next

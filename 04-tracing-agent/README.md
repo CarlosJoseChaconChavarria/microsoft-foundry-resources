@@ -34,6 +34,7 @@ By the time you finish this lab you'll know:
 ## Table of contents
 
 - [What you will build](#what-you-will-build)
+- [Exam AI-300 mapping](#exam-ai-300-mapping)
 - [Prerequisites](#prerequisites)
   - [Step 1 · Configure your `.env` file](#step-1--configure-your-env-file)
   - [Step 2 · Get an Application Insights connection string](#step-2--get-an-application-insights-connection-string)
@@ -75,6 +76,23 @@ A Python script that:
 The code change relative to sample 01 is *tiny*. The capability you unlock
 is enormous: you now have a queryable record of every model interaction,
 which is the foundation of every production AI system.
+
+---
+
+## Exam AI-300 mapping
+
+This lab is the most directly exam-relevant lab in the workshop — observability accounts for **10–15%** of AI-300.
+
+[Exam AI-300: Operationalizing Machine Learning and Generative AI Solutions](https://learn.microsoft.com/credentials/certifications/resources/study-guides/ai-300)
+
+| AI-300 skill area | Specific objective | What you do in this lab |
+|---|---|---|
+| **Implement generative AI quality assurance and observability (10–15%)** | *Configure detailed logging, tracing, and debugging capabilities for production troubleshooting* | You add `configure_azure_monitor()` — the single line that wires every prompt, completion, and token count into Application Insights via OpenTelemetry. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Monitor performance metrics, including latency, throughput, and response times* | The KQL queries in this lab reconstruct per-run latency from `dependencies` table timestamps and measure call counts across agent runs. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Track and optimize cost metrics, including token consumption and resource usage* | `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` are OTel semantic-convention attributes the Agent Framework auto-populates. The lab shows how to query them in KQL. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Examine continuous monitoring in Foundry* | Application Insights is the backend for Foundry's continuous monitoring integration — the telemetry you ship here is what the Foundry portal's monitoring dashboards consume. |
+
+> **Exam tip.** AI-300 tests you on the OTel abstraction stack: OTel API → OTel SDK → Azure Monitor exporter → Application Insights. Know that `configure_azure_monitor(connection_string=...)` is the single call that wires all four layers, and that `AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED=true` is the environment variable that controls whether prompt and completion text is included in spans (off by default for privacy).
 
 ---
 
@@ -254,28 +272,29 @@ Open `04-tracing-agent.py` in VS Code and read along.
 ### Section 1: Imports and `.env` loader
 
 ```python
-import asyncio
-import os
-from pathlib import Path
+import asyncio          # agent.run() is an async generator — we need asyncio.run()
+import os               # os.environ reads env vars; also used to set content-recording flags
+from pathlib import Path  # makes __file__-relative path construction cross-platform
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # reads .env into os.environ before anything else touches it
 
+# Load .env from THIS folder, not the cwd — so the script works from any terminal directory.
+# Framework imports (Section 4) come AFTER we set content-recording env vars in Section 3,
+# because the framework reads those flags at import time.
 load_dotenv(Path(__file__).resolve().parent / ".env")
 ```
-
-Identical to samples 01 and 03. We load `.env` from this folder so the
-script behaves the same whether you launch it from VS Code's Run button or
-from a terminal in any directory. The framework imports come **after** the
-content-recording env vars are set in Section 3, so they take effect at
-import time.
 
 ### Section 2: Configuration and fail-fast checks
 
 ```python
-ENDPOINT = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
-MODEL = os.environ.get("FOUNDRY_MODEL", "gpt-4o")
-APPINSIGHTS_CONN = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING", "").strip()
+ENDPOINT = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")         # Foundry project endpoint URL
+MODEL    = os.environ.get("FOUNDRY_MODEL", "gpt-4o")              # deployment name; defaults to gpt-4o
+APPINSIGHTS_CONN = os.environ.get(
+    "APPLICATIONINSIGHTS_CONNECTION_STRING", ""
+).strip()  # .strip() removes accidental whitespace from the .env value
 
+# Fail-fast #1 (same as sample 01): catch a missing or unfilled endpoint
+# before any HTTP connection is attempted.
 if not ENDPOINT or "<YOUR_" in ENDPOINT:
     raise RuntimeError(
         "FOUNDRY_PROJECT_ENDPOINT is not configured. "
@@ -283,6 +302,9 @@ if not ENDPOINT or "<YOUR_" in ENDPOINT:
         "project endpoint. See README.md."
     )
 
+# Fail-fast #2 (new in sample 04): the Azure Monitor exporter silently
+# disables export when given an empty connection string — producing a working
+# script with zero telemetry. Loud failure here is far easier to diagnose.
 if not APPINSIGHTS_CONN:
     raise RuntimeError(
         "APPLICATIONINSIGHTS_CONNECTION_STRING is not configured. "
@@ -291,15 +313,6 @@ if not APPINSIGHTS_CONN:
         "portal under your project, Manage, Tracing. See README.md."
     )
 ```
-
-Two fail-fast checks, one more than sample 01.
-
-- The first repeats the sample-01 pattern: when you forget to fill in the
-  endpoint, fail before any HTTP call.
-- The second is **new for sample 04**. When `APPLICATIONINSIGHTS_CONNECTION_STRING`
-  is empty, fail immediately. Without it, `configure_azure_monitor` would
-  initialize, the script would run, and you'd see no telemetry at all in
-  App Insights. That is a confusing silent failure that costs hours to debug.
 
 > **Deep dive on the latent bug this guards against.** The Azure Monitor
 > exporter accepts an empty connection string at initialization time and
@@ -342,46 +355,31 @@ weird," you need to know *exactly* what it said.
 ### Section 4: Wiring Azure Monitor and getting a tracer
 
 ```python
+# These imports come AFTER the content-recording os.environ lines in Section 3.
+# The framework reads those flags at import time — setting them later is too late.
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
-from agent_framework.observability import enable_instrumentation
+from agent_framework.observability import enable_instrumentation  # GenAI span emitter
 from azure.identity import AzureCliCredential
-from azure.monitor.opentelemetry import configure_azure_monitor
-from opentelemetry import trace
+from azure.monitor.opentelemetry import configure_azure_monitor   # the one-call setup
+from opentelemetry import trace                                   # vendor-neutral OTel API
 
+# Single call that assembles the entire pipeline in memory:
+#   TracerProvider → BatchSpanProcessor → Azure Monitor exporter → App Insights
+# Also wires OTel LoggerProvider so Python logging goes to App Insights 'traces' table,
+# and auto-instruments HTTP clients and database drivers.
 configure_azure_monitor(connection_string=APPINSIGHTS_CONN)
+
+# Activates agent-framework GenAI instrumentation, which emits 'invoke_agent'
+# and 'chat <model>' spans with all gen_ai.* semantic-convention attributes.
+# Without this call the pipeline is wired but the framework emits nothing useful.
 enable_instrumentation(enable_sensitive_data=True)
 
+# Ask the global TracerProvider for a tracer named after this module.
+# __name__ shows up in App Insights under "library" attribution so you can
+# tell which Python file created a span when multiple files share a trace.
 tracer = trace.get_tracer(__name__)
 ```
-
-This is **the** block that turns an uninstrumented Python script into a
-fully observable one. Read it carefully. You will copy it into dozens of
-future projects.
-
-1. **`configure_azure_monitor(connection_string=...)`** does *all* of:
-   - Installs an OTel `TracerProvider` (the factory for tracers) globally.
-   - Attaches a `BatchSpanProcessor` to it.
-   - Attaches the **Azure Monitor exporter** to that processor with the
-     parsed instrumentation key and ingestion endpoint from your
-     connection string.
-   - Wires up the OTel `LoggerProvider` so Python `logging` calls flow to
-     App Insights' `traces` table.
-   - Auto-detects and enables several built-in instrumentations (HTTP
-     clients, database drivers) so you don't have to wire them up
-     individually.
-
-2. **`enable_instrumentation(enable_sensitive_data=True)`** turns on the
-   agent-framework GenAI instrumentation. That is what produces the
-   `invoke_agent` and `chat gpt-4o` spans with all the
-   `gen_ai.*` semantic-convention attributes. Without this call the
-   pipeline is wired but the framework emits nothing of interest.
-
-3. **`trace.get_tracer(__name__)`** asks the global provider for a tracer
-   named after this module. Tracers are cheap, the framework uses many of
-   them internally. The `__name__` shows up in dashboards under "library"
-   attribution, which helps when you want to know *which Python file*
-   created a span.
 
 > **Deep dive on why imports come after `os.environ[...] = "true"`.** The
 > Agent Framework reads `AZURE_TRACING_GEN_AI_CONTENT_RECORDING_ENABLED`
@@ -396,41 +394,38 @@ future projects.
 
 ```python
 async def main() -> None:
+    # Open a custom ROOT span for the entire run.
+    # Every framework-emitted span (invoke_agent, chat gpt-4o, …) created
+    # inside this block becomes a CHILD, sharing the same operation_Id.
+    # In KQL you can find this run with: name == "example-tracing"
+    # and then list all children via operation_Id.
+    #
+    # You can also attach business attributes to this span (see Exercise 2):
+    #   span.set_attribute("workshop.user", "razi")
+    # Those attributes appear on every child in App Insights queries.
     with tracer.start_as_current_span("example-tracing"):
-        client = FoundryChatClient(
+        client = FoundryChatClient(   # same as sample 01 — Foundry endpoint + credential
             model=MODEL,
             project_endpoint=ENDPOINT,
             credential=AzureCliCredential(),
         )
 
-        async with Agent(
+        async with Agent(             # context-manager creates the agent and cleans up
             client=client,
             name=AGENT_NAME,
             instructions=AGENT_INSTRUCTIONS,
         ) as agent:
             for user_input in USER_INPUTS:
+                # stream=True lets us print tokens as they arrive;
+                # the framework emits its GenAI spans when the stream closes.
                 async for chunk in await agent.run(user_input, stream=True):
                     ...
 ```
 
-The single addition versus sample 01: `tracer.start_as_current_span("example-tracing")`.
-
-This creates one **custom parent span** for the entire run. Why bother?
-
-- **Grouping.** Every model-call and `invoke_agent` span emitted by the
-  framework underneath gets `example-tracing` as its parent. In KQL, you
-  can find this trace by name (`name == "example-tracing"`) and then
-  enumerate all children via `operation_Id`.
-- **Custom attributes.** You can attach business-meaningful attributes
-  (user ID, request ID, A/B-test bucket) to this parent span, and they
-  will be present in queries for the whole run.
-- **Latency budget.** The span's start-to-end duration tells you the
-  end-to-end time for the request as the user experienced it. The
-  framework's child spans tell you *where* inside that budget the time
-  went (Foundry HTTPS latency, model inference, local processing).
-
 You'll see this `example-tracing` span at the **top** of the trace tree in
-the App Insights Transaction Search blade.
+the App Insights Transaction Search blade. Its start-to-end duration is the
+end-to-end latency as the user experienced it; the framework's child spans
+show you *where* inside that budget the time went.
 
 ### Section 6: Why `await asyncio.sleep(2.0)` at the end
 
