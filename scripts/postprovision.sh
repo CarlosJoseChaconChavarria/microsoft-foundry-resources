@@ -11,7 +11,6 @@ echo "=== Configuring .env files ==="
 
 # ── Get values from azd environment ──────────────────────────────────────
 RG=$(azd env get-value AZURE_RESOURCE_GROUP 2>/dev/null)
-HUB=$(azd env get-value FOUNDRY_HUB_NAME 2>/dev/null)
 PROJECT=$(azd env get-value FOUNDRY_PROJECT_NAME 2>/dev/null)
 MODEL=$(azd env get-value FOUNDRY_MODEL 2>/dev/null)
 AI_CONN=$(azd env get-value APPLICATIONINSIGHTS_CONNECTION_STRING 2>/dev/null)
