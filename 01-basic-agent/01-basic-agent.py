@@ -9,26 +9,54 @@ Run this script
 > cp .env.example .env                 # then edit .env and fill in your values
 > az login
 > python 01-basic-agent.py
+
+AI-300 skills covered
+---------------------
+• Create and configure Foundry resources and project environments (GenAIOps)
+• Configure identity and access management — keyless auth via AzureCliCredential
+  is the local equivalent of a managed identity (same pattern the exam tests).
+• Deploy foundation models via serverless API endpoints (gpt-4o through Foundry).
 """
 
-import asyncio
-import os
-from pathlib import Path
+# ── Standard library ─────────────────────────────────────────────────────────
+import asyncio          # Agent Framework is async-first; asyncio.run() launches the loop.
+import os               # Read FOUNDRY_* variables that load_dotenv injects into the env.
+from pathlib import Path  # Build a path to .env relative to *this file*, not the cwd.
 
-from dotenv import load_dotenv
+# ── Third-party ──────────────────────────────────────────────────────────────
+from dotenv import load_dotenv  # Reads key=value pairs from .env into os.environ.
+                                # The framework does NOT auto-load .env, so we do it here.
 
-from agent_framework import Agent
-from agent_framework_foundry import FoundryChatClient
+# ── Building block 1 of 4 — CREDENTIAL ───────────────────────────────────────
+# AzureCliCredential mints Entra ID tokens from your `az login` session.
+# No API keys or connection strings ever touch the source code.
+# In production this swaps to DefaultAzureCredential / ManagedIdentityCredential
+# without changing any other line — same interface, different token source.
+# AI-300: this is the dev-time proxy for a system-assigned managed identity.
 from azure.identity import AzureCliCredential
 
+# ── Building block 3 of 4 — AGENT ────────────────────────────────────────────
+# Agent is the provider-agnostic abstraction: instructions + tools + client.
+# It does NOT know about Foundry specifically; any ChatClient implementation works.
+from agent_framework import Agent
+
+# ── Building block 2 of 4 — CLIENT ───────────────────────────────────────────
+# FoundryChatClient is the HTTP transport layer for Microsoft Foundry.
+# It translates Agent.run() calls into HTTPS requests against your project endpoint.
+# AI-300: the endpoint format is
+#   https://<account>.services.ai.azure.com/api/projects/<project>
+# This maps to a Microsoft.CognitiveServices/accounts/projects ARM resource.
+from agent_framework_foundry import FoundryChatClient
+
 # Load .env from this file's folder so both `python 01-basic-agent.py` and
-# VS Code's ▶ Run button pick up the same configuration.
+# VS Code's ▶ Run button pick up the same configuration regardless of cwd.
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-# Microsoft Foundry Agent Configuration (read from .env — see .env.example).
+# ── Configuration ─────────────────────────────────────────────────────────────
 ENDPOINT = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
 MODEL_DEPLOYMENT_NAME = os.environ.get("FOUNDRY_MODEL", "gpt-4o")
 
+# Fail fast with a clear message rather than a confusing 404 from the API.
 if not ENDPOINT or "<YOUR_" in ENDPOINT:
     raise RuntimeError(
         "FOUNDRY_PROJECT_ENDPOINT is not configured. "
@@ -37,37 +65,51 @@ if not ENDPOINT or "<YOUR_" in ENDPOINT:
     )
 
 AGENT_NAME = "ai-agent"
-AGENT_INSTRUCTIONS = "You are a helpful AI assistant."
+AGENT_INSTRUCTIONS = "You are a helpful AI assistant."  # System prompt — what the model always sees.
 
-# User inputs for the conversation
+# Add more strings to send multiple turns in the same session (shares memory).
 USER_INPUTS = [
     "Can you tell me the gravity of Earth versus the gravity of Mars?",
 ]
 
 
 async def main() -> None:
-    # The Foundry chat client owns the HTTPS transport to your project.
-    # FoundryChatClient also reads FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_MODEL
-    # from the environment automatically; we pass them explicitly here so the
-    # fail-fast check above runs first.
+    # ── Assemble the four building blocks ────────────────────────────────────
+    #
+    #   CREDENTIAL → CLIENT → AGENT → SESSION
+    #
+    # These four objects appear in every Foundry agent, no matter how complex.
+
+    # Building block 2 — CLIENT
+    # Owns the HTTPS connection to your Foundry project.
+    # We pass ENDPOINT and MODEL explicitly so the fail-fast check above runs first.
     client = FoundryChatClient(
-        project_endpoint=ENDPOINT,
-        model=MODEL_DEPLOYMENT_NAME,
-        credential=AzureCliCredential(),
+        project_endpoint=ENDPOINT,          # Where: services.ai.azure.com/api/projects/...
+        model=MODEL_DEPLOYMENT_NAME,        # Which deployment: "gpt-4o"
+        credential=AzureCliCredential(),    # Building block 1 — CREDENTIAL (token source)
     )
 
+    # Building block 3 — AGENT
+    # Wraps the client with a system prompt and (optionally) tools.
+    # No tools here → pure conversation. Tools are added in labs 02 and 03.
     agent = Agent(
         client=client,
         name=AGENT_NAME,
         instructions=AGENT_INSTRUCTIONS,
     )
 
-    # A session carries conversation history across multiple .run() calls so
-    # the model can answer follow-ups in context.
+    # Building block 4 — SESSION
+    # Holds the conversation history (all messages so far).
+    # Create it OUTSIDE the loop so every prompt shares the same memory.
+    # Move it INSIDE the loop to make each turn stateless (model forgets prior turns).
     session = agent.create_session()
 
     for user_input in USER_INPUTS:
         print(f"\n# User: '{user_input}'")
+
+        # stream=True → agent.run() returns an async iterator of incremental chunks.
+        # Each chunk.text is a small text fragment (often a single word).
+        # This is the "typewriter" effect; drop stream=True for a blocking single result.
         async for chunk in agent.run(user_input, session=session, stream=True):
             if chunk.text:
                 print(chunk.text, end="", flush=True)
@@ -78,6 +120,8 @@ async def main() -> None:
 
 if __name__ == "__main__":
     try:
+        # asyncio.run() creates a fresh event loop, runs main(), then closes it.
+        # Prefer this over the deprecated loop = asyncio.get_event_loop() pattern.
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nProgram interrupted by user")
