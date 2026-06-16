@@ -104,6 +104,23 @@ risk category that the managed agent doesn't cover yet.
 
 ---
 
+## Exam AI-300 mapping
+
+Lab 07 maps almost entirely to the **quality assurance and observability** skill area — the discipline that turns a working agent into a trustworthy one.
+
+[Exam AI-300: Operationalizing Machine Learning and Generative AI Solutions](https://learn.microsoft.com/credentials/certifications/resources/study-guides/ai-300)
+
+| AI-300 skill area | Specific objective | What you do in this lab |
+|---|---|---|
+| **Implement generative AI quality assurance and observability (10–15%)** | *Configure risk and safety evaluations for harmful content detection* | You run adversarial scans (PyRIT locally, Foundry managed) against AcmeBot and measure the Attack Success Rate (ASR) — the exam's risk-and-safety evaluation objective in practice. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Create test datasets and data mapping for comprehensive model evaluation* | Lab 07a builds a hand-crafted adversarial seed list; lab 07b uses Foundry's auto-generated corpus — the two ends of the dataset-creation spectrum for safety testing. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Set up automated evaluation workflows by using built-in and custom evaluation metrics* | Lab 07b's managed Foundry Red Teaming Agent runs the scan loop automatically and uploads a structured scorecard to the portal — the exam's "automated evaluation workflow" pattern. |
+| **Implement generative AI quality assurance and observability (10–15%)** | *Implement AI quality metrics, including groundedness, relevance, coherence, and fluency* | The ASR metric and the hosted judge model's harm taxonomy are concrete examples of the "AI quality metrics" the exam references for safety-focused evaluation pipelines. |
+
+> **Exam tip.** AI-300 distinguishes between *evaluation* (measuring quality in a controlled setting) and *monitoring* (measuring quality in production). Red-teaming is evaluation — you control the inputs. Lab 04's OpenTelemetry pipeline is monitoring — you observe real traffic. The exam will ask you to select the right tool for each scenario; know that red-teaming finds *potential* failures before launch, while monitoring catches *actual* failures after launch.
+
+---
+
 ## Shared mental model — converter, target, scorer
 
 PyRIT — and the Foundry agent that sits on top of it — boils every
