@@ -88,6 +88,7 @@ AGENT_INSTRUCTIONS = "You are a helpful AI assistant."  # System prompt — what
 # Add more strings to send multiple turns in the same session (shares memory).
 USER_INPUTS = [
     "Can you tell me the gravity of Earth versus the gravity of Mars?",
+    "And what about the Moon?",
 ]
 
 
